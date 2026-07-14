@@ -1,0 +1,14 @@
+# whitelist.txt — restrict test_all_models.sh to only the models listed here.
+# One model ID per line. Lines starting with '#' are comments and ignored.
+# Blank lines are ignored.
+#
+# If this file is absent, all suitable (chat) models from the gateway are tested.
+# If present, only models present in BOTH the gateway list AND this file are tested.
+#
+# Copy this file to whitelist.txt and edit:
+#   cp whitelist.txt.example whitelist.txt
+#
+# Example:
+# glm-5.1
+# kimi-k2.6
+# deepseek-v4-pro

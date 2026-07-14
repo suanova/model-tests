@@ -1,0 +1,5 @@
+# Secrets — never commit your real API key
+.env
+
+# Local model whitelist (per-user selection, not shared)
+whitelist.txt
