@@ -200,10 +200,11 @@ list_chat_models() {
         exit 1
     fi
 
-    local models_file dropped_file notfound_file whitelist_file whitelist_flag
+    local models_file dropped_file notfound_file whitelist_file whitelist_flag total_file
     models_file="$(mktemp)"
     dropped_file="$(mktemp)"
     notfound_file="$(mktemp)"
+    total_file="$(mktemp)"
     whitelist_file="${SCRIPT_DIR}/whitelist.txt"
     whitelist_flag="0"
     if [ -f "${whitelist_file}" ]; then
@@ -216,12 +217,14 @@ list_chat_models() {
 
     MODELS_FILE="${models_file}" DROPPED_FILE="${dropped_file}" \
         NOTFOUND_FILE="${notfound_file}" WHITELIST_FILE="${whitelist_file}" \
-        WHITELIST_FLAG="${whitelist_flag}" python3 -c "
+        WHITELIST_FLAG="${whitelist_flag}" TOTAL_FILE="${total_file}" \
+        python3 -c "
 import json, os, re, sys
 data = json.load(sys.stdin)
 EXCLUDE_PATTERNS = [
     r'-tts-', r'^tts-', r'-image-', r'^image-', r'dall-e',
     r'-video-', r'^video-', r'sora', r'seedance', r'embed', r'-vision',
+    r'-ocr-', r'^ocr-', r'-asr-', r'^asr-', r'-audio-', r'^audio-',
 ]
 def is_chat(m):
     mid = m['id'].lower()
@@ -230,6 +233,7 @@ def is_chat(m):
             return False
     return True
 
+total = len(data.get('data', []))
 chat_models = [m['id'] for m in data.get('data', []) if is_chat(m)]
 
 whitelist = None
@@ -244,7 +248,9 @@ if os.environ.get('WHITELIST_FLAG') == '1':
 
 with open(os.environ['MODELS_FILE'], 'w') as kept, \
      open(os.environ['DROPPED_FILE'], 'w') as dropped, \
-     open(os.environ['NOTFOUND_FILE'], 'w') as notfound:
+     open(os.environ['NOTFOUND_FILE'], 'w') as notfound, \
+     open(os.environ['TOTAL_FILE'], 'w') as total_file:
+    total_file.write(str(total) + '\n')
     for m in data.get('data', []):
         if not is_chat(m):
             dropped.write(m['id'] + '\n')
@@ -265,9 +271,12 @@ with open(os.environ['MODELS_FILE'], 'w') as kept, \
 
     rm -f "${json_file}"
 
-    local models
+    local models total_fetched dropped_count
     models="$(cat "${models_file}")"
+    total_fetched="$(cat "${total_file}")"
+    rm -f "${total_file}"
     LIST_CHAT_MODELS_COUNT="$(echo "${models}" | wc -l)"
+    dropped_count="$(wc -l < "${dropped_file}" | tr -d ' ')"
 
     if [ -z "${models}" ]; then
         log_fail "No suitable models found"
@@ -278,7 +287,7 @@ with open(os.environ['MODELS_FILE'], 'w') as kept, \
     if [ "${whitelist_flag}" = "1" ]; then
         log_info "Whitelist active (${whitelist_file}) — testing ${LIST_CHAT_MODELS_COUNT} whitelisted model(s)"
     else
-        log_info "Found ${LIST_CHAT_MODELS_COUNT} suitable (chat) models"
+        log_info "${total_fetched} models fetched, ${dropped_count} ignored, ${LIST_CHAT_MODELS_COUNT} kept for testing"
     fi
     if [ -s "${dropped_file}" ]; then
         log_info "Skipped models:"

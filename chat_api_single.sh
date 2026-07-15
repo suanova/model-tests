@@ -71,12 +71,21 @@ if 'error' in data:
     sys.exit(0)
 
 # Extract content from choices[0].message.content
+# Some models put the reply in reasoning_content instead of content,
+# so we check both fields and use whichever has text.
 choices = data.get('choices', [])
 if not choices:
     print('FAIL||empty choices')
     sys.exit(0)
 
-content = choices[0].get('message', {}).get('content', '')
+msg = choices[0].get('message', {})
+content = msg.get('content', '') or ''
+reasoning = msg.get('reasoning_content', '') or ''
+
+# Use reasoning_content if content is empty
+if not content and reasoning:
+    content = reasoning
+
 if not content:
     print('FAIL||empty content')
     sys.exit(0)

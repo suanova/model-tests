@@ -240,4 +240,4 @@ model-tests/
 
 - The runner image (`harbor.isuanova.com/yangle/model-tests`) is pulled from the registry and reused across all API model tests — no build needed. To update it, `docker pull` the latest tag. The Claude Code image (`harbor.isuanova.com/yangle/claude-code`) is built locally with `run_claude_code_tests.sh` (or the `docker build` line in Option B); rebuild it to pick up a newer `claude` CLI version.
 - Each model test starts a fresh container (~1-2s startup) plus one API call (~5-30s).
-- Non-chat models are auto-filtered (see `EXCLUDE_PATTERNS` in `common.sh`): `-tts-`/`^tts-`, `-image-`/`^image-`, `-video-`/`^video-`, `embed`, `-vision`, `dall-e`, `sora`, `seedance`.
+- Non-chat models are auto-filtered (see `EXCLUDE_PATTERNS` in `common.sh`): `-tts-`/`^tts-`, `-image-`/`^image-`, `-video-`/`^video-`, `embed`, `-vision`, `dall-e`, `sora`, `seedance`, `-ocr-`/`^ocr-`, `-asr-`/`^asr-`, `-audio-`/`^audio-`. The model listing step reports how many models were fetched, how many were ignored, and how many were kept for testing.
