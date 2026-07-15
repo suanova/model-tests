@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # messages_api_single.sh [model_name]
-# Tests ONE model via the Anthropic Messages API (/v1/messages) through CubeRouter.
+# Tests ONE model via the Anthropic Messages API (/v1/messages) through the gateway.
 # This is the same API that Claude Code uses, but tested directly with curl (no Docker)
 # to isolate the gateway/API layer from the Claude Code client.
 #
@@ -36,7 +36,7 @@ HTTP_CODE="$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
     -H "x-api-key: ${API_KEY}" \
     -H "anthropic-version: 2023-06-01" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"${MODEL}\",\"max_tokens\":50,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HELLO\"}]}")"
+    -d "{\"model\":\"${MODEL}\",\"max_tokens\":200,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HELLO\"}]}")"
 CURL_EXIT=$?
 
 RESPONSE="$(cat "${RESPONSE_FILE}")"

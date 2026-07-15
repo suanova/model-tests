@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# common.sh — Shared helpers for Claude Code integration test cases
+# common.sh — Shared helpers for API model test scripts
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="harbor.isuanova.com/yangle/claude-code"
@@ -53,15 +53,42 @@ load_env_file() {
 }
 
 # ── Require API key ─────────────────────────────────────────────────
+# Optionally logs config info (API key source, base URL, whitelist status).
+# Set QUIET=1 to suppress the config info log — used when a single-model
+# script is invoked by an *_all.sh parent so the info isn't repeated N times.
 require_api_key() {
+    # Track where API_KEY came from before .env loading
+    local api_key_source="environment variable"
+    local api_key_was_set=0
+    if [ -n "${API_KEY:-}" ]; then
+        api_key_was_set=1
+    fi
+
     load_env_file
     # Set defaults AFTER load_env_file so .env values take precedence
     BASE_URL="${BASE_URL:-https://cuberouter.cn}"
+
+    # Determine API key source after loading
+    if [ "${api_key_was_set}" -eq 1 ]; then
+        api_key_source="environment variable"
+    elif [ -f "${SCRIPT_DIR}/.env" ]; then
+        api_key_source=".env file"
+    fi
+
     if [ -z "${API_KEY:-}" ]; then
         log_fail "API_KEY is required."
         log_fail "Set it in ${SCRIPT_DIR}/.env as: API_KEY=your_key"
         log_fail "Or pass it inline: API_KEY=your_key bash $0"
         exit 1
+    fi
+
+    # Log configuration info (only when not running as a child process)
+    if [ "${QUIET:-0}" -eq 0 ]; then
+        log_info "API key loaded from: ${api_key_source}"
+        log_info "Base URL: ${BASE_URL}"
+        if [ -f "${SCRIPT_DIR}/whitelist.txt" ]; then
+            log_info "Whitelist: ${SCRIPT_DIR}/whitelist.txt (active)"
+        fi
     fi
 }
 
@@ -187,8 +214,10 @@ EOF
 #
 # Usage: list_chat_models
 # Sets global: LIST_CHAT_MODELS_COUNT (number of kept models)
+#             TOTAL_MODELS_FETCHED (total from gateway)
+#             TOTAL_MODELS_IGNORED (filtered out as non-chat)
 list_chat_models() {
-    log_step "Fetching available models from CubeRouter"
+    log_step "Fetching available models from the gateway"
 
     local models_json
     models_json="$(curl -s "${BASE_URL}/v1/models" \
@@ -277,6 +306,8 @@ with open(os.environ['MODELS_FILE'], 'w') as kept, \
     rm -f "${total_file}"
     LIST_CHAT_MODELS_COUNT="$(echo "${models}" | wc -l)"
     dropped_count="$(wc -l < "${dropped_file}" | tr -d ' ')"
+    TOTAL_MODELS_FETCHED="${total_fetched}"
+    TOTAL_MODELS_IGNORED="${dropped_count}"
 
     if [ -z "${models}" ]; then
         log_fail "No suitable models found"
@@ -307,21 +338,24 @@ with open(os.environ['MODELS_FILE'], 'w') as kept, \
 }
 
 # ── Print a results summary table ───────────────────────────────────
-# Usage: print_summary_table <results_file> <passed> <total> <summary_label>
-# <summary_label> e.g. "models support Claude Code" or "models support chat completions"
+# Usage: print_summary_table <results_file> <passed> <tested> <summary_label> <title> [<fetched> <ignored>]
+# <fetched> and <ignored> are optional; when provided, the summary line
+# includes "N fetched, M ignored, K tested, P/N support …".
 print_summary_table() {
     local results_file="$1"
     local passed="$2"
-    local total="$3"
+    local tested="$3"
     local summary_label="$4"
     local title="$5"
+    local fetched="${6:-}"
+    local ignored="${7:-}"
 
     echo -e "${BOLD}═══════════════════════════════════════════════════════════════════════════════${NC}"
     echo -e "${BOLD}  ${title}${NC}"
     echo -e "${BOLD}═══════════════════════════════════════════════════════════════════════════════${NC}"
     echo ""
 
-    python3 - "${results_file}" "${passed}" "${total}" "${summary_label}" <<'PYEOF'
+    python3 - "${results_file}" "${passed}" "${tested}" "${summary_label}" "${fetched}" "${ignored}" <<'PYEOF'
 import sys
 
 GREEN = '\033[32m'
@@ -331,8 +365,10 @@ NC = '\033[0m'
 
 results_file = sys.argv[1]
 passed = int(sys.argv[2])
-total = int(sys.argv[3])
+tested = int(sys.argv[3])
 summary_label = sys.argv[4]
+fetched = sys.argv[5] if len(sys.argv) > 5 else ''
+ignored = sys.argv[6] if len(sys.argv) > 6 else ''
 
 with open(results_file) as f:
     lines = [l.rstrip('\n') for l in f if l.strip()]
@@ -354,7 +390,10 @@ for idx, line in enumerate(lines, 1):
     print(f"{idx:<4} {model:<42} {result_str} {detail}")
 
 print("-" * 85)
-print(f"\n  {BOLD}Summary: {passed}/{total} {summary_label}{NC}")
+if fetched and ignored:
+    print(f"\n  {BOLD}Summary: {fetched} fetched, {ignored} ignored, {tested} tested — {passed}/{tested} {summary_label}{NC}")
+else:
+    print(f"\n  {BOLD}Summary: {passed}/{tested} {summary_label}{NC}")
 PYEOF
 
     echo ""

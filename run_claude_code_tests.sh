@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_claude_code_tests.sh — Run the Claude Code model sweep for CubeRouter.
+# run_claude_code_tests.sh — Run the Claude Code model sweep.
 # Usage: bash run_claude_code_tests.sh   (key from .env or API_KEY env var)
 #
 # Builds the Docker image, then runs claude_code_all.sh (all suitable models

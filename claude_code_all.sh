@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # claude_code_all.sh
-# Iterates over all suitable (text/chat) models from CubeRouter and runs
+# Iterates over all suitable (text/chat) models and runs
 # claude_code_single.sh for each, testing Claude Code support (Anthropic
 # /v1/messages via the Claude Code client in Docker). Outputs a results table
 # + summary.
@@ -47,7 +47,7 @@ for model in ${MODELS}; do
     # Run single-model case. Stderr (live logs) streams to terminal; stdout
     # (the machine-parseable PASS|model|... line) is captured for the summary table.
     LINE_FILE="$(mktemp)"
-    bash "${SCRIPT_DIR}/claude_code_single.sh" "${model}" > "${LINE_FILE}" || true
+    QUIET=1 bash "${SCRIPT_DIR}/claude_code_single.sh" "${model}" > "${LINE_FILE}" || true
     RESULT_LINE="$(grep -E '^(PASS|FAIL)\|' "${LINE_FILE}" | tail -1)"
     rm -f "${LINE_FILE}"
     echo "${RESULT_LINE}" >> "${RESULTS_FILE}"
@@ -63,7 +63,9 @@ done
 # ── Output summary table ────────────────────────────────────────────
 print_summary_table "${RESULTS_FILE}" "${PASSED}" "${TOTAL}" \
     "models support Claude Code" \
-    "Claude Code Compatibility — Model Test Results"
+    "Claude Code Compatibility — Model Test Results" \
+    "${TOTAL_MODELS_FETCHED}" "${TOTAL_MODELS_IGNORED}" \
+    "${TOTAL_MODELS_FETCHED}" "${TOTAL_MODELS_IGNORED}"
 
 rm -f "${RESULTS_FILE}"
 

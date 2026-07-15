@@ -1,11 +1,11 @@
-# CubeRouter Model Tests
+# Model Tests
 
-Test scripts that verify CubeRouter models work across the gateway's API endpoints — primarily the OpenAI-style **Chat Completions** API and the **Anthropic Messages** API — with an additional test that exercises the full **Claude Code** client path on top of the Messages API.
+Test scripts that verify models work across a gateway's API endpoints — primarily the OpenAI-style **Chat Completions** API and the **Anthropic Messages** API — with an additional test that exercises the full **Claude Code** client path on top of the Messages API.
 
 ## Prerequisites
 
 - Docker (with build & run permissions)
-- A valid CubeRouter API key
+- A valid API key
 
 ## Quick Start
 
@@ -162,7 +162,7 @@ Extra args after the subcommand are forwarded to the underlying script.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_KEY` | (required) | Your CubeRouter API key |
+| `API_KEY` | (required) | Your API key |
 | `BASE_URL` | `https://cuberouter.cn` | Gateway base URL |
 | `TEST_TIMEOUT` | `30` | Per-model timeout in seconds |
 
@@ -180,7 +180,7 @@ docker run --rm \
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `API_KEY` | (required) | Your CubeRouter API key — set in `.env` or as an env var |
+| `API_KEY` | (required) | Your API key — set in `.env` or as an env var |
 | `BASE_URL` | `https://cuberouter.cn` | Gateway base URL (can also be set in `.env`) |
 | `TEST_TIMEOUT` | `30` | Per-model timeout in seconds (applies to all single-model tests: chat completions, Anthropic Messages, and Claude Code) |
 

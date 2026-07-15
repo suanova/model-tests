@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# chat_api_single.sh [model_name]
-# Tests ONE model via the OpenAI-style chat completions API (/v1/chat/completions)
-# through the gateway.
+# responses_api_single.sh [model_name]
+# Tests ONE model via the OpenAI Responses API (/v1/responses) through the gateway.
 #
 # Prints progress to stderr; prints a single machine-parseable result line to stdout:
 #   PASS|<model>|<reply>
@@ -25,17 +24,17 @@ require_api_key
 MODEL="${1:-glm-5.1}"
 # Per-model timeout in seconds (override with TEST_TIMEOUT env var)
 TEST_TIMEOUT="${TEST_TIMEOUT:-30}"
-log_info "Testing model (chat completions): ${MODEL} (timeout: ${TEST_TIMEOUT}s)"
+log_info "Testing model (Responses API): ${MODEL} (timeout: ${TEST_TIMEOUT}s)"
 
-# ── Call the chat completions API ───────────────────────────────────
+# ── Call the Responses API ────────────────────────────────────────────
 # Uses a timeout so a hanging model can't block the sweep.
 RESPONSE_FILE="$(mktemp)"
 HTTP_CODE="$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
     --max-time "${TEST_TIMEOUT}" \
-    -X POST "${BASE_URL}/v1/chat/completions" \
+    -X POST "${BASE_URL}/v1/responses" \
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HELLO\"}],\"max_tokens\":200}")"
+    -d "{\"model\":\"${MODEL}\",\"input\":\"Reply with exactly: HELLO\",\"max_output_tokens\":50}")"
 CURL_EXIT=$?
 
 RESPONSE="$(cat "${RESPONSE_FILE}")"
@@ -54,7 +53,9 @@ if [ "${CURL_EXIT}" -ne 0 ]; then
 fi
 
 # ── Parse the response ──────────────────────────────────────────────
-# Extract content and error via python3 for robust JSON parsing.
+# OpenAI Responses API response shape:
+#   success: {"id":"resp_...","object":"response","status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"..."}]}],...}
+#   error:   {"error":{"code":"...","message":"..."}}
 PARSED="$(printf '%s' "${RESPONSE}" | python3 -c "
 import json, sys
 try:
@@ -63,35 +64,51 @@ except Exception as e:
     print('PARSE_ERROR||' + str(e))
     sys.exit(0)
 
-# Check for API error object
+# Check for error object
 if 'error' in data:
     err = data['error']
-    msg = err.get('message', str(err)) if isinstance(err, dict) else str(err)
+    if isinstance(err, dict):
+        msg = err.get('message', str(err))
+    else:
+        msg = str(err)
     print('API_ERROR||' + str(msg).replace('\n', ' '))
     sys.exit(0)
 
-# Extract content from choices[0].message.content
-# Some models put the reply in reasoning_content instead of content,
-# so we check both fields and use whichever has text.
-choices = data.get('choices', [])
-if not choices:
-    print('FAIL||empty choices')
+# Check for failed/incomplete status
+status = data.get('status', '')
+if status in ('failed', 'incomplete', 'cancelled'):
+    err = data.get('error', {})
+    msg = ''
+    if isinstance(err, dict):
+        msg = err.get('message', str(err))
+    else:
+        msg = str(err) if err else status
+    print('API_ERROR||' + str(msg).replace('\n', ' '))
     sys.exit(0)
 
-msg = choices[0].get('message', {})
-content = msg.get('content', '') or ''
-reasoning = msg.get('reasoning_content', '') or ''
+# Extract text from output[].content[].text (type == output_text)
+output = data.get('output', [])
+if not output:
+    print('FAIL||empty output')
+    sys.exit(0)
 
-# Use reasoning_content if content is empty
-if not content and reasoning:
-    content = reasoning
+text = ''
+for item in output:
+    if isinstance(item, dict) and item.get('type') == 'message':
+        content = item.get('content', [])
+        for block in content:
+            if isinstance(block, dict) and block.get('type') == 'output_text':
+                text = block.get('text', '')
+                break
+        if text:
+            break
 
-if not content:
-    print('FAIL||empty content')
+if not text:
+    print('FAIL||no output_text in response')
     sys.exit(0)
 
 # Success — single line, pipe-safe
-print('OK||' + str(content).replace('\n', ' '))
+print('OK||' + str(text).replace('\n', ' '))
 " 2>&1)"
 
 STATUS="$(printf '%s' "${PARSED}" | cut -d'|' -f1)"

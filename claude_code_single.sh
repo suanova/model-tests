@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # claude_code_single.sh [model_name]
-# Tests ONE model via Claude Code through CubeRouter using settings.json config.
+# Tests ONE model via Claude Code through the gateway using settings.json config.
 # Defaults to glm-5.1 if no model is specified.
 #
 # Prints progress to stderr; prints a single machine-parseable result line to stdout:

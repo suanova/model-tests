@@ -24,7 +24,7 @@ fi
 
 print_help() {
     cat <<'EOF'
-CubeRouter API test runner
+API model test runner
 
 Usage: docker run --rm -e API_KEY=sk-... <image> [subcommand] [args...]
 
@@ -39,7 +39,7 @@ Subcommands:
   help                      Show this help.
 
 Environment:
-  API_KEY        Required. Your CubeRouter API key (pass via -e API_KEY=...).
+  API_KEY        Required. Your API key (pass via -e API_KEY=...).
   BASE_URL       Optional. Gateway base URL (defaults to https://cuberouter.cn).
   TEST_TIMEOUT   Optional. Per-model timeout in seconds (defaults to 30).
 

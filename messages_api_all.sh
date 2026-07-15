@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # messages_api_all.sh
-# Iterates over all suitable (text/chat) models from CubeRouter and runs
+# Iterates over all suitable (text/chat) models and runs
 # messages_api_single.sh for each, testing the Anthropic Messages API
 # (/v1/messages) directly with curl (no Docker / Claude Code). Outputs a
 # results table + summary.
@@ -52,7 +52,7 @@ for model in ${MODELS}; do
     # Run single-model case. Stderr (live logs) streams to terminal; stdout
     # (the PASS|model|... line) is captured for the summary table.
     LINE_FILE="$(mktemp)"
-    bash "${SCRIPT_DIR}/messages_api_single.sh" "${model}" > "${LINE_FILE}" || true
+    QUIET=1 bash "${SCRIPT_DIR}/messages_api_single.sh" "${model}" > "${LINE_FILE}" || true
     RESULT_LINE="$(grep -E '^(PASS|FAIL)\|' "${LINE_FILE}" | tail -1)"
     rm -f "${LINE_FILE}"
     echo "${RESULT_LINE}" >> "${RESULTS_FILE}"
@@ -68,7 +68,9 @@ done
 # ── Output summary table ────────────────────────────────────────────
 print_summary_table "${RESULTS_FILE}" "${PASSED}" "${TOTAL}" \
     "models support the Anthropic Messages API" \
-    "Anthropic Messages API — Model Test Results"
+    "Anthropic Messages API — Model Test Results" \
+    "${TOTAL_MODELS_FETCHED}" "${TOTAL_MODELS_IGNORED}" \
+    "${TOTAL_MODELS_FETCHED}" "${TOTAL_MODELS_IGNORED}"
 
 rm -f "${RESULTS_FILE}"
 

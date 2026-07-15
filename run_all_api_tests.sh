@@ -63,7 +63,7 @@ for model in ${MODELS}; do
     for round in $(seq 1 "${ROUNDS}"); do
         # ── Chat completions API ──────────────────────────────────────
         CHAT_LINE_FILE="$(mktemp)"
-        bash "${SCRIPT_DIR}/chat_api_single.sh" "${model}" > "${CHAT_LINE_FILE}" 2>/dev/null || true
+        QUIET=1 bash "${SCRIPT_DIR}/chat_api_single.sh" "${model}" > "${CHAT_LINE_FILE}" 2>/dev/null || true
         CHAT_LINE="$(grep -E '^(PASS|FAIL)\|' "${CHAT_LINE_FILE}" | tail -1)"
         rm -f "${CHAT_LINE_FILE}"
         if echo "${CHAT_LINE}" | grep -q "^PASS|"; then
@@ -76,7 +76,7 @@ for model in ${MODELS}; do
 
         # ── Anthropic Messages API ────────────────────────────────────
         MSG_LINE_FILE="$(mktemp)"
-        bash "${SCRIPT_DIR}/messages_api_single.sh" "${model}" > "${MSG_LINE_FILE}" 2>/dev/null || true
+        QUIET=1 bash "${SCRIPT_DIR}/messages_api_single.sh" "${model}" > "${MSG_LINE_FILE}" 2>/dev/null || true
         MSG_LINE="$(grep -E '^(PASS|FAIL)\|' "${MSG_LINE_FILE}" | tail -1)"
         rm -f "${MSG_LINE_FILE}"
         if echo "${MSG_LINE}" | grep -q "^PASS|"; then
@@ -98,7 +98,7 @@ echo -e "${BOLD}  Combined API Test Results (${ROUNDS} round(s))${NC}"
 echo -e "${BOLD}══════════════════════════════════════════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-python3 - "${RESULTS_FILE}" "${ROUNDS}" <<'PYEOF'
+python3 - "${RESULTS_FILE}" "${ROUNDS}" "${TOTAL_MODELS_FETCHED}" "${TOTAL_MODELS_IGNORED}" <<'PYEOF'
 import sys
 
 GREEN = '\033[32m'
@@ -108,6 +108,8 @@ NC = '\033[0m'
 
 results_file = sys.argv[1]
 rounds = sys.argv[2]
+fetched = sys.argv[3] if len(sys.argv) > 3 else ''
+ignored = sys.argv[4] if len(sys.argv) > 4 else ''
 
 with open(results_file) as f:
     lines = [l.rstrip('\n') for l in f if l.strip()]
@@ -146,9 +148,8 @@ for idx, line in enumerate(lines, 1):
 
 print("-" * 86)
 total = len(lines)
-print(f"\n  {BOLD}Summary ({rounds} round(s) per API):{NC}")
-print(f"  Chat Completions API: {chat_supported}/{total} models support it (passed >= 1 round)")
-print(f"  Anthropic Messages API: {msg_supported}/{total} models support it (passed >= 1 round)")
+prefix = f"{fetched} fetched, {ignored} ignored, {total} tested — " if fetched and ignored else ""
+print(f"\n  {BOLD}Summary ({rounds} round(s) per API): {prefix}{chat_supported}/{total} support Chat Completions, {msg_supported}/{total} support Messages API{NC}")
 print(f"  Both APIs:              {sum(1 for l in lines if int(l.split('|')[1]) > 0 and int(l.split('|')[3]) > 0)}/{total} models")
 PYEOF
 

@@ -1,4 +1,4 @@
-# Dockerfile — runner image for CubeRouter API tests
+# Dockerfile — runner image for API model tests
 #
 # Bundles the chat completions + Anthropic Messages API test scripts so the
 # full suite can be run via `docker run` without installing anything on the host.
