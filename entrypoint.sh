@@ -5,11 +5,14 @@
 #   docker run --rm -e API_KEY=sk-... <image> [subcommand] [args...]
 #
 # Subcommands:
-#   all [rounds]          Run both APIs across all models (default). Rounds default to 1.
+#   all [rounds] [--responses]  Run all APIs across all models (default). Rounds default to 1.
+#                               Pass --responses to also test the OpenAI Responses API.
 #   chat                  Run chat completions API across all models.
 #   messages              Run Anthropic Messages API across all models.
+#   responses             Run OpenAI Responses API across all models.
 #   chat-single [model]   Run chat completions API for one model (defaults to glm-5.1).
 #   messages-single [model]  Run Anthropic Messages API for one model (defaults to glm-5.1).
+#   responses-single [model]  Run OpenAI Responses API for one model (defaults to glm-5.1).
 #   help                  Show this help.
 
 set -uo pipefail
@@ -29,13 +32,17 @@ API model test runner
 Usage: docker run --rm -e API_KEY=sk-... <image> [subcommand] [args...]
 
 Subcommands:
-  all [rounds]              Run both APIs (chat + messages) across all models.
-                            Rounds default to 1. A model "supports" an API if it
-                            passes at least once across all rounds.
+  all [rounds] [--responses]  Run Chat + Messages APIs across all models.
+                              Rounds default to 1. Pass --responses to also
+                              include the OpenAI Responses API (/v1/responses).
+                              A model "supports" an API if it passes at least
+                              once across all rounds.
   chat                      Run chat completions API (/v1/chat/completions) across all models.
   messages                  Run Anthropic Messages API (/v1/messages) across all models.
+  responses                 Run OpenAI Responses API (/v1/responses) across all models.
   chat-single [model]       Run chat completions API for one model (defaults to glm-5.1).
   messages-single [model]   Run Anthropic Messages API for one model (defaults to glm-5.1).
+  responses-single [model]  Run OpenAI Responses API for one model (defaults to glm-5.1).
   help                      Show this help.
 
 Environment:
@@ -46,8 +53,11 @@ Environment:
 Examples:
   docker run --rm -e API_KEY=sk-... <image>
   docker run --rm -e API_KEY=sk-... <image> all 3
+  docker run --rm -e API_KEY=sk-... <image> all 3 --responses
   docker run --rm -e API_KEY=sk-... <image> chat
-  docker run --rm -e API_KEY=sk-... <image> messages-single glm-5.1
+  docker run --rm -e API_KEY=sk-... <image> messages
+  docker run --rm -e API_KEY=sk-... <image> responses
+  docker run --rm -e API_KEY=sk-... <image> responses-single glm-5.1
 EOF
 }
 
@@ -61,11 +71,17 @@ case "$SUBCMD" in
     messages)
         exec bash "$SCRIPT_DIR/messages_api_all.sh" "$@"
         ;;
+    responses)
+        exec bash "$SCRIPT_DIR/responses_api_all.sh" "$@"
+        ;;
     chat-single)
         exec bash "$SCRIPT_DIR/chat_api_single.sh" "$@"
         ;;
     messages-single)
         exec bash "$SCRIPT_DIR/messages_api_single.sh" "$@"
+        ;;
+    responses-single)
+        exec bash "$SCRIPT_DIR/responses_api_single.sh" "$@"
         ;;
     help|-h|--help)
         print_help

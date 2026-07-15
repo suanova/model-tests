@@ -35,7 +35,7 @@ HTTP_CODE="$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
     -X POST "${BASE_URL}/v1/chat/completions" \
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HELLO\"}],\"max_tokens\":200}")"
+    -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HELLO\"}],\"max_tokens\":500}")"
 CURL_EXIT=$?
 
 RESPONSE="$(cat "${RESPONSE_FILE}")"

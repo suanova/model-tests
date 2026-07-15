@@ -1,7 +1,7 @@
 # Dockerfile — runner image for API model tests
 #
-# Bundles the chat completions + Anthropic Messages API test scripts so the
-# full suite can be run via `docker run` without installing anything on the host.
+# Bundles the chat completions + Anthropic Messages + OpenAI Responses API test scripts
+# so the full suite can be run via `docker run` without installing anything on the host.
 # The API key is passed at runtime via -e API_KEY=... (or baked into .env).
 #
 # Build:
@@ -10,7 +10,8 @@
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests all 3
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests chat
-#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests messages-single glm-5.1
+#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests all 3 --responses
+#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests responses-single glm-5.1
 
 FROM python:3.11-slim
 
@@ -31,6 +32,8 @@ COPY common.sh \
      chat_api_all.sh \
      messages_api_single.sh \
      messages_api_all.sh \
+     responses_api_single.sh \
+     responses_api_all.sh \
      run_all_api_tests.sh \
      entrypoint.sh \
      .env.example \

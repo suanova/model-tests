@@ -1,6 +1,6 @@
 # Model Tests
 
-Test scripts that verify models work across a gateway's API endpoints — primarily the OpenAI-style **Chat Completions** API and the **Anthropic Messages** API — with an additional test that exercises the full **Claude Code** client path on top of the Messages API.
+Test scripts that verify models work across a gateway's API endpoints — primarily the OpenAI-style **Chat Completions** API and the **Anthropic Messages** API — with an additional test for the **OpenAI Responses** API (opt-in, since most models don't support it) and a test that exercises the full **Claude Code** client path on top of the Messages API.
 
 ## Prerequisites
 
@@ -19,25 +19,30 @@ export API_KEY=sk-xxx
 
 ### Option A: Docker image (API tests only)
 
-The runner image is published to the registry as `harbor.isuanova.com/yangle/model-tests` and bundles the chat completions + Anthropic Messages API test scripts, so you can run the full suite without installing anything on the host. The first `docker run` pulls it automatically (or `docker pull` it ahead of time):
+The runner image is published to the registry as `harbor.isuanova.com/yangle/model-tests` and bundles the chat completions + Anthropic Messages + OpenAI Responses API test scripts, so you can run the full suite without installing anything on the host. The first `docker run` pulls it automatically (or `docker pull` it ahead of time):
 
 ```bash
 # Pull the published image (optional — the first docker run pulls it automatically)
 docker pull harbor.isuanova.com/yangle/model-tests
 
-# Run all API tests (both chat + messages), default 1 round
+# Run all API tests (chat + messages, default 1 round)
 docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests
 
 # 3 rounds
 docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests all 3
 
+# Include the Responses API (opt-in — most models don't support it)
+docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests all 3 --responses
+
 # Just one API, all models
 docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests chat
 docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests messages
+docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests responses
 
 # Single model
 docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests chat-single glm-5.1
 docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests messages-single glm-5.1
+docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests responses-single glm-5.1
 
 # Show help
 docker run --rm harbor.isuanova.com/yangle/model-tests help
@@ -55,9 +60,14 @@ The local scripts read `API_KEY` from the environment (or from a `.env` file —
 bash chat_api_all.sh
 # Anthropic Messages API, all models:
 bash messages_api_all.sh
-# Both APIs, all models, multiple rounds, one combined table:
+# Responses API, all models:
+bash responses_api_all.sh
+# Both APIs (chat + messages), all models, multiple rounds, one combined table:
 bash run_all_api_tests.sh          # default 1 round
 bash run_all_api_tests.sh 3        # 3 rounds
+# Include the Responses API (opt-in):
+bash run_all_api_tests.sh --responses
+bash run_all_api_tests.sh 3 --responses
 
 # ── Claude Code test (additional; needs the local Claude Code image) ──
 # Build the Claude Code image (first time only, needed for claude_code_* tests)
@@ -73,16 +83,18 @@ So the exported env var always takes precedence over the `.env` file. To use a `
 
 ## Test Cases
 
-There are three test suites, each with a single-model and an all-models script:
+There are four test suites, each with a single-model and an all-models script:
 
 | Suite | API | Client | Single-model | All-models |
 |-------|-----|--------|--------------|------------|
 | **Chat Completions** | OpenAI `/v1/chat/completions` | Direct curl | `chat_api_single.sh` | `chat_api_all.sh` |
 | **Anthropic Messages** | `/v1/messages` | Direct curl | `messages_api_single.sh` | `messages_api_all.sh` |
+| **OpenAI Responses** (opt-in) | `/v1/responses` | Direct curl | `responses_api_single.sh` | `responses_api_all.sh` |
 | **Claude Code** (additional) | Anthropic `/v1/messages` | Claude Code (Docker) | `claude_code_single.sh` | `claude_code_all.sh` |
 
 - **Chat Completions** (`chat_api_single.sh`) — tests the OpenAI-style chat completions endpoint (`POST /v1/chat/completions` with `Authorization: Bearer`) directly with curl.
 - **Anthropic Messages** (`messages_api_single.sh`) — tests the raw Anthropic Messages API (`POST /v1/messages` with `x-api-key`) directly with curl, no Docker. Isolates the gateway/API layer from the Claude Code client.
+- **OpenAI Responses** (`responses_api_single.sh`) — tests the newer OpenAI Responses API (`POST /v1/responses` with `Authorization: Bearer`) directly with curl. Uses `input` instead of `messages` and `max_output_tokens` instead of `max_tokens`. **Not included by default** in `run_all_api_tests.sh` since most models don't support this endpoint — pass `--responses` to enable it.
 - **Claude Code** (`claude_code_single.sh`) — additional test of the full Claude Code client path: mounts a `settings.json` into a Docker container and runs `claude -p ... --model <model>`. Proves the model works with Claude Code specifically.
 
 All `*_all.sh` scripts share the same model filtering (drops TTS/image/video/embedding/vision), whitelist support, and summary table.
@@ -97,13 +109,21 @@ bash chat_api_single.sh            # → tests glm-5.1
 # Anthropic Messages API — single model
 bash messages_api_single.sh glm-5.1
 
+# Responses API — single model
+bash responses_api_single.sh glm-5.1
+
 # Any API suite — all suitable models (respects whitelist.txt if present)
 bash chat_api_all.sh               # Chat completions API
 bash messages_api_all.sh           # Anthropic Messages API
+bash responses_api_all.sh          # Responses API
 
-# Combined: both APIs, all models, multiple rounds, one table
+# Combined: chat + messages APIs, all models, multiple rounds, one table
 bash run_all_api_tests.sh          # default 1 round per model per API
 bash run_all_api_tests.sh 3        # 3 rounds
+
+# Combined: including Responses API (opt-in)
+bash run_all_api_tests.sh --responses
+bash run_all_api_tests.sh 3 --responses
 
 # Claude Code — additional, requires building the local Claude Code image first
 bash claude_code_single.sh glm-5.1 # single model (build image via run_claude_code_tests.sh first)
@@ -116,7 +136,9 @@ API_KEY=sk-xxx bash chat_api_single.sh glm-5.1
 
 ### `run_all_api_tests.sh` — combined multi-round test
 
-Runs both the Chat Completions API and the Anthropic Messages API for every suitable model, across multiple rounds, and reports a single combined table. A model counts as **supporting** an API if it passes **at least once** across all rounds — so transient failures don't fail a model, but a model that never responds correctly is marked unsupported.
+Runs the Chat Completions API and the Anthropic Messages API for every suitable model, across multiple rounds, and reports a single combined table. The Responses API is **not included by default** (most models don't support it) — pass `--responses` to add it as a third column.
+
+A model counts as **supporting** an API if it passes **at least once** across all rounds — so transient failures don't fail a model, but a model that never responds correctly is marked unsupported.
 
 ```
 $ bash run_all_api_tests.sh 2
@@ -131,15 +153,34 @@ $ bash run_all_api_tests.sh 2
   Chat Completions API: 2/2 models support it (passed >= 1 round)
   Anthropic Messages API: 1/2 models support it (passed >= 1 round)
   Both APIs:              1/2 models
+  Tip: pass --responses to include the OpenAI Responses API (/v1/responses)
 ```
 
-- **Argument:** number of rounds (default `1`). Each round runs both APIs for each model.
+With `--responses`:
+
+```
+$ bash run_all_api_tests.sh 2 --responses
+...
+#    Model                              Chat Completions     Messages API          Responses API
+-----------------------------------------------------------------------------------------------
+1    glm-5.1                            2/2  ✓               2/2  ✓               2/2  ✓
+2    some-flaky-model                  1/2  ✓               0/2  ✗               0/2  ✗
+-----------------------------------------------------------------------------------------------
+
+  Summary (2 round(s) per API):
+  Chat Completions API:   2/2 models support it (passed >= 1 round)
+  Anthropic Messages API: 1/2 models support it (passed >= 1 round)
+  Responses API:          1/2 models support it (passed >= 1 round)
+  All three APIs:         1/2 models
+```
+
+- **Arguments:** number of rounds (default `1`) + optional `--responses` flag. Each round runs the selected APIs for each model.
 - **Per-round progress** streams to stderr (`API [Chat Completions] - round 1/2  PASS`); the final combined table goes to stdout.
 - Respects `whitelist.txt` and `TEST_TIMEOUT` like the other scripts.
 
 ## Docker image
 
-The runner image is published to the registry as `harbor.isuanova.com/yangle/model-tests` and bundles the API test scripts (chat completions + Anthropic Messages) so the suite runs anywhere with Docker — no host dependencies, no build step (the first `docker run` pulls it). Claude Code tests are local-only: they build and run a separate `harbor.isuanova.com/yangle/claude-code` image (see `Dockerfile.claude-code`) that isn't included in the runner image.
+The runner image is published to the registry as `harbor.isuanova.com/yangle/model-tests` and bundles the API test scripts (chat completions + Anthropic Messages + OpenAI Responses) so the suite runs anywhere with Docker — no host dependencies, no build step (the first `docker run` pulls it). Claude Code tests are local-only: they build and run a separate `harbor.isuanova.com/yangle/claude-code` image (see `Dockerfile.claude-code`) that isn't included in the runner image.
 
 **Subcommands** (`docker run --rm -e API_KEY <image> <subcommand>` — requires `export API_KEY=sk-xxx` first):
 
@@ -149,11 +190,13 @@ docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests <subcommand>
 
 | Subcommand | Runs | Extra args |
 |------------|------|------------|
-| `all` (default) | `run_all_api_tests.sh` — both APIs, all models | `[rounds]` (default 1) |
+| `all` (default) | `run_all_api_tests.sh` — chat + messages APIs, all models | `[rounds]` `[--responses]` (default 1 round) |
 | `chat` | `chat_api_all.sh` — chat completions, all models | — |
 | `messages` | `messages_api_all.sh` — Anthropic Messages, all models | — |
+| `responses` | `responses_api_all.sh` — Responses API, all models | — |
 | `chat-single` | `chat_api_single.sh` — chat completions, one model | `[model]` (default glm-5.1) |
 | `messages-single` | `messages_api_single.sh` — Anthropic Messages, one model | `[model]` (default glm-5.1) |
+| `responses-single` | `responses_api_single.sh` — Responses API, one model | `[model]` (default glm-5.1) |
 | `help` | print usage | — |
 
 Extra args after the subcommand are forwarded to the underlying script.
@@ -174,6 +217,13 @@ docker run --rm \
     -v "$PWD/whitelist.txt:/app/whitelist.txt:ro" \
     harbor.isuanova.com/yangle/model-tests \
     all 3
+
+# Include Responses API
+docker run --rm \
+    -e API_KEY \
+    -v "$PWD/whitelist.txt:/app/whitelist.txt:ro" \
+    harbor.isuanova.com/yangle/model-tests \
+    all 3 --responses
 ```
 
 ## Config
@@ -182,7 +232,7 @@ docker run --rm \
 |----------|---------|-------------|
 | `API_KEY` | (required) | Your API key — set in `.env` or as an env var |
 | `BASE_URL` | `https://cuberouter.cn` | Gateway base URL (can also be set in `.env`) |
-| `TEST_TIMEOUT` | `30` | Per-model timeout in seconds (applies to all single-model tests: chat completions, Anthropic Messages, and Claude Code) |
+| `TEST_TIMEOUT` | `30` | Per-model timeout in seconds (applies to all single-model tests: chat completions, Anthropic Messages, Responses API, and Claude Code) |
 
 ## Whitelist (optional)
 
@@ -195,7 +245,9 @@ cp whitelist.txt.example whitelist.txt
 #   kimi-k2.6
 bash chat_api_all.sh
 bash messages_api_all.sh
+bash responses_api_all.sh
 bash run_all_api_tests.sh 3
+bash run_all_api_tests.sh 3 --responses
 bash claude_code_all.sh
 ```
 
@@ -207,13 +259,15 @@ When `whitelist.txt` is present, only models in **both** the gateway list and th
 model-tests/
 ├── Dockerfile                # Runner image: bundles API test scripts → harbor.isuanova.com/yangle/model-tests
 ├── Dockerfile.claude-code    # Claude Code image: Ubuntu + Node 18 + claude-code → harbor.isuanova.com/yangle/claude-code (local use)
-├── entrypoint.sh             # Docker entrypoint: maps subcommands (all/chat/messages/...) to scripts
+├── entrypoint.sh             # Docker entrypoint: maps subcommands (all/chat/messages/responses/...) to scripts
 ├── common.sh                 # Shared helpers (.env loader, list_chat_models, summary table, settings.json)
-├── run_all_api_tests.sh      # Combined: both APIs, all models, N rounds, one table
+├── run_all_api_tests.sh      # Combined: chat + messages APIs, all models, N rounds, one table (--responses to add Responses API)
 ├── chat_api_single.sh        # Chat completions API: test one model (defaults to glm-5.1)
 ├── chat_api_all.sh           # Chat completions API: iterate all suitable models
 ├── messages_api_single.sh    # Anthropic Messages API: test one model (defaults to glm-5.1)
 ├── messages_api_all.sh       # Anthropic Messages API: iterate all suitable models
+├── responses_api_single.sh   # OpenAI Responses API: test one model (defaults to glm-5.1)
+├── responses_api_all.sh      # OpenAI Responses API: iterate all suitable models
 ├── claude_code_single.sh     # Claude Code (additional): test one model (defaults to glm-5.1)
 ├── claude_code_all.sh        # Claude Code (additional): iterate all suitable models
 ├── run_claude_code_tests.sh  # Local orchestrator: build Claude Code image + run Claude Code sweep
@@ -231,13 +285,14 @@ model-tests/
 4. For each model, the corresponding `*_single.sh` script runs:
    - `chat_api_single.sh` — `POST /v1/chat/completions` (OpenAI format, `Authorization: Bearer` auth) with curl; checks `choices[0].message.content`.
    - `messages_api_single.sh` — `POST /v1/messages` (Anthropic format, `x-api-key` auth) with curl; checks `content[0].text`.
+   - `responses_api_single.sh` — `POST /v1/responses` (OpenAI Responses format, `Authorization: Bearer` auth) with curl; uses `input` instead of `messages` and `max_output_tokens` instead of `max_tokens`; checks `output[0].content[0].text` (where `type == "output_text"`).
    - `claude_code_single.sh` — additional test: mounts a `settings.json` into a Docker container and runs `claude -p "Reply with exactly: HELLO" --output-format text --max-turns 1 --model <model>`.
-5. Each single-model script prints a machine-parseable `PASS|<model>|<reply>` or `FAIL|<model>|<error>` line to stdout (the two API scripts include the model's reply after the final `|`; `claude_code_single.sh` checks only for errors, so its PASS line has an empty third field) and live `[PASS]`/`[FAIL]` logs to stderr.
+5. Each single-model script prints a machine-parseable `PASS|<model>|<reply>` or `FAIL|<model>|<error>` line to stdout (the three API scripts include the model's reply after the final `|`; `claude_code_single.sh` checks only for errors, so its PASS line has an empty third field) and live `[PASS]`/`[FAIL]` logs to stderr.
 6. The shared `print_summary_table` helper renders the final results table with the `n/m` count.
-7. `run_all_api_tests.sh` runs both `chat_api_single.sh` and `messages_api_single.sh` for each model across N rounds and reports a combined table.
+7. `run_all_api_tests.sh` runs `chat_api_single.sh` and `messages_api_single.sh` for each model across N rounds and reports a combined table. The Responses API is **opt-in** via `--responses` (since most models don't support `/v1/responses`).
 
 ## Notes
 
 - The runner image (`harbor.isuanova.com/yangle/model-tests`) is pulled from the registry and reused across all API model tests — no build needed. To update it, `docker pull` the latest tag. The Claude Code image (`harbor.isuanova.com/yangle/claude-code`) is built locally with `run_claude_code_tests.sh` (or the `docker build` line in Option B); rebuild it to pick up a newer `claude` CLI version.
 - Each model test starts a fresh container (~1-2s startup) plus one API call (~5-30s).
-- Non-chat models are auto-filtered (see `EXCLUDE_PATTERNS` in `common.sh`): `-tts-`/`^tts-`, `-image-`/`^image-`, `-video-`/`^video-`, `embed`, `-vision`, `dall-e`, `sora`, `seedance`, `-ocr-`/`^ocr-`, `-asr-`/`^asr-`, `-audio-`/`^audio-`. The model listing step reports how many models were fetched, how many were ignored, and how many were kept for testing.
+Test scripts that verify models work across a gateway's API endpoints — primarily the OpenAI-style **Chat Completions** API and the **Anthropic Messages** API — with an additional test for the **OpenAI Responses** API (opt-in, since most models don't support it) and a test that exercises the full **Claude Code** client path on top of the Messages API.

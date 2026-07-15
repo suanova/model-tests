@@ -36,7 +36,7 @@ HTTP_CODE="$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
     -H "x-api-key: ${API_KEY}" \
     -H "anthropic-version: 2023-06-01" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"${MODEL}\",\"max_tokens\":200,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HELLO\"}]}")"
+    -d "{\"model\":\"${MODEL}\",\"max_tokens\":500,\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HELLO\"}]}")"
 CURL_EXIT=$?
 
 RESPONSE="$(cat "${RESPONSE_FILE}")"

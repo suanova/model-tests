@@ -34,7 +34,7 @@ HTTP_CODE="$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
     -X POST "${BASE_URL}/v1/responses" \
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
-    -d "{\"model\":\"${MODEL}\",\"input\":\"Reply with exactly: HELLO\",\"max_output_tokens\":50}")"
+    -d "{\"model\":\"${MODEL}\",\"input\":\"Reply with exactly: HELLO\",\"max_output_tokens\":500}")"
 CURL_EXIT=$?
 
 RESPONSE="$(cat "${RESPONSE_FILE}")"
@@ -64,8 +64,8 @@ except Exception as e:
     print('PARSE_ERROR||' + str(e))
     sys.exit(0)
 
-# Check for error object
-if 'error' in data:
+# Check for error object (error can be null on success, so skip None)
+if data.get('error') is not None:
     err = data['error']
     if isinstance(err, dict):
         msg = err.get('message', str(err))
