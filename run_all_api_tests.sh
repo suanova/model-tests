@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
-# run_all_api_tests.sh [rounds] [--responses]
+# run_all_api_tests.sh [rounds]
 #
-# Runs the Chat Completions API and Anthropic Messages API tests for every
-# suitable model, across multiple rounds. The OpenAI Responses API is NOT
-# included by default (most models don't support it) — pass --responses to
-# add it. A model counts as "supporting" an API if it passes at least once
-# across all rounds.
+# Runs the Chat Completions API, Anthropic Messages API, and OpenAI Responses
+# API tests for every suitable model, across multiple rounds. A model counts
+# as "supporting" an API if it passes at least once across all rounds.
 #
 # Usage:
-#   bash run_all_api_tests.sh              # default: 1 round, chat + messages
-#   bash run_all_api_tests.sh 3            # 3 rounds, chat + messages
-#   bash run_all_api_tests.sh --responses  # 1 round, chat + messages + responses
-#   bash run_all_api_tests.sh 3 --responses
-#   TEST_TIMEOUT=60 bash run_all_api_tests.sh 2 --responses
+#   bash run_all_api_tests.sh              # default: 1 round, all three APIs
+#   bash run_all_api_tests.sh 3            # 3 rounds, all three APIs
+#   TEST_TIMEOUT=60 bash run_all_api_tests.sh 2
 #
 # Respects whitelist.txt if present.
 
@@ -25,23 +21,16 @@ require_api_key
 
 # ── Parse arguments ──────────────────────────────────────────────────
 ROUNDS=1
-INCLUDE_RESPONSES=0
 for arg in "$@"; do
-    if [ "$arg" = "--responses" ]; then
-        INCLUDE_RESPONSES=1
-    elif [[ "$arg" =~ ^[0-9]+$ ]] && [ "$arg" -ge 1 ]; then
+    if [[ "$arg" =~ ^[0-9]+$ ]] && [ "$arg" -ge 1 ]; then
         ROUNDS="$arg"
     else
-        log_fail "Invalid argument: '${arg}' (expected a positive integer or --responses)"
+        log_fail "Invalid argument: '${arg}' (expected a positive integer)"
         exit 1
     fi
 done
 
-if [ "${INCLUDE_RESPONSES}" -eq 1 ]; then
-    log_info "Combined API tests — ${ROUNDS} round(s) per model, per API (including Responses API)"
-else
-    log_info "Combined API tests — ${ROUNDS} round(s) per model, per API (Chat + Messages only; pass --responses to add Responses API)"
-fi
+log_info "Combined API tests — ${ROUNDS} round(s) per model, per API (Chat + Messages + Responses)"
 echo ""
 
 # ── Fetch and filter models ──────────────────────────────────────────
@@ -97,19 +86,17 @@ for model in ${MODELS}; do
             printf "  API [Messages API]     - round %s/%s  ${RED}FAIL${NC}  %s\n" "${round}" "${ROUNDS}" "${MSG_ERR}" >&2
         fi
 
-        # ── OpenAI Responses API (opt-in) ─────────────────────────────
-        if [ "${INCLUDE_RESPONSES}" -eq 1 ]; then
-            RESP_LINE_FILE="$(mktemp)"
-            QUIET=1 bash "${SCRIPT_DIR}/responses_api_single.sh" "${model}" > "${RESP_LINE_FILE}" 2>/dev/null || true
-            RESP_LINE="$(grep -E '^(PASS|FAIL)\|' "${RESP_LINE_FILE}" | tail -1)"
-            rm -f "${RESP_LINE_FILE}"
-            if echo "${RESP_LINE}" | grep -q "^PASS|"; then
-                RESP_PASSES=$((RESP_PASSES + 1))
-                printf "  API [Responses API]    - round %s/%s  ${GREEN}PASS${NC}\n" "${round}" "${ROUNDS}" >&2
-            else
-                RESP_ERR="$(printf '%s' "${RESP_LINE}" | cut -d'|' -f3-)"
-                printf "  API [Responses API]    - round %s/%s  ${RED}FAIL${NC}  %s\n" "${round}" "${ROUNDS}" "${RESP_ERR}" >&2
-            fi
+        # ── OpenAI Responses API ──────────────────────────────────────
+        RESP_LINE_FILE="$(mktemp)"
+        QUIET=1 bash "${SCRIPT_DIR}/responses_api_single.sh" "${model}" > "${RESP_LINE_FILE}" 2>/dev/null || true
+        RESP_LINE="$(grep -E '^(PASS|FAIL)\|' "${RESP_LINE_FILE}" | tail -1)"
+        rm -f "${RESP_LINE_FILE}"
+        if echo "${RESP_LINE}" | grep -q "^PASS|"; then
+            RESP_PASSES=$((RESP_PASSES + 1))
+            printf "  API [Responses API]    - round %s/%s  ${GREEN}PASS${NC}\n" "${round}" "${ROUNDS}" >&2
+        else
+            RESP_ERR="$(printf '%s' "${RESP_LINE}" | cut -d'|' -f3-)"
+            printf "  API [Responses API]    - round %s/%s  ${RED}FAIL${NC}  %s\n" "${round}" "${ROUNDS}" "${RESP_ERR}" >&2
         fi
     done
 
@@ -119,15 +106,11 @@ done
 
 # ── Output combined summary table ────────────────────────────────────
 echo -e "${BOLD}════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════${NC}"
-if [ "${INCLUDE_RESPONSES}" -eq 1 ]; then
-    echo -e "${BOLD}  Combined API Test Results (${ROUNDS} round(s), including Responses API)${NC}"
-else
-    echo -e "${BOLD}  Combined API Test Results (${ROUNDS} round(s))${NC}"
-fi
+echo -e "${BOLD}  Combined API Test Results (${ROUNDS} round(s))${NC}"
 echo -e "${BOLD}════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-python3 - "${RESULTS_FILE}" "${ROUNDS}" "${INCLUDE_RESPONSES}" "${TOTAL_MODELS_FETCHED}" "${TOTAL_MODELS_IGNORED}" <<'PYEOF'
+python3 - "${RESULTS_FILE}" "${ROUNDS}" "${TOTAL_MODELS_FETCHED}" "${TOTAL_MODELS_IGNORED}" <<'PYEOF'
 import sys
 
 GREEN = '\033[32m'
@@ -137,19 +120,14 @@ NC = '\033[0m'
 
 results_file = sys.argv[1]
 rounds = sys.argv[2]
-include_responses = sys.argv[3] == '1'
-fetched = sys.argv[4] if len(sys.argv) > 4 else ''
-ignored = sys.argv[5] if len(sys.argv) > 5 else ''
+fetched = sys.argv[3] if len(sys.argv) > 3 else ''
+ignored = sys.argv[4] if len(sys.argv) > 4 else ''
 
 with open(results_file) as f:
     lines = [l.rstrip('\n') for l in f if l.strip()]
 
-if include_responses:
-    header = f"{BOLD}{'#':<4} {'Model':<40} {'Chat Completions':<20} {'Messages API':<20} {'Responses API':<20}{NC}"
-    sep_width = 104
-else:
-    header = f"{BOLD}{'#':<4} {'Model':<40} {'Chat Completions':<20} {'Messages API':<20}{NC}"
-    sep_width = 86
+header = f"{BOLD}{'#':<4} {'Model':<40} {'Chat Completions':<20} {'Messages API':<20} {'Responses API':<20}{NC}"
+sep_width = 104
 
 print(header)
 print("-" * sep_width)
@@ -185,21 +163,13 @@ for idx, line in enumerate(lines, 1):
     msg_color = GREEN if msg_ok else RED
     resp_color = GREEN if resp_ok else RED
 
-    if include_responses:
-        print(f"{idx:<4} {model:<40} {chat_color}{chat_str:<20}{NC} {msg_color}{msg_str:<20}{NC} {resp_color}{resp_str:<20}{NC}")
-    else:
-        print(f"{idx:<4} {model:<40} {chat_color}{chat_str:<20}{NC} {msg_color}{msg_str:<20}{NC}")
+    print(f"{idx:<4} {model:<40} {chat_color}{chat_str:<20}{NC} {msg_color}{msg_str:<20}{NC} {resp_color}{resp_str:<20}{NC}")
 
 print("-" * sep_width)
 total = len(lines)
 prefix = f"{fetched} fetched, {ignored} ignored, {total} tested — " if fetched and ignored else ""
-if include_responses:
-    print(f"\n  {BOLD}Summary ({rounds} round(s) per API): {prefix}{chat_supported}/{total} support Chat Completions, {msg_supported}/{total} support Messages API, {resp_supported}/{total} support Responses API{NC}")
-    print(f"  All three APIs:         {sum(1 for l in lines if int(l.split('|')[1]) > 0 and int(l.split('|')[3]) > 0 and int(l.split('|')[5]) > 0)}/{total} models")
-else:
-    print(f"\n  {BOLD}Summary ({rounds} round(s) per API): {prefix}{chat_supported}/{total} support Chat Completions, {msg_supported}/{total} support Messages API{NC}")
-    print(f"  Both APIs:              {sum(1 for l in lines if int(l.split('|')[1]) > 0 and int(l.split('|')[3]) > 0)}/{total} models")
-    print(f"  Tip: pass --responses to include the OpenAI Responses API (/v1/responses)")
+print(f"\n  {BOLD}Summary ({rounds} round(s) per API): {prefix}{chat_supported}/{total} support Chat Completions, {msg_supported}/{total} support Messages API, {resp_supported}/{total} support Responses API{NC}")
+print(f"  All three APIs:         {sum(1 for l in lines if int(l.split('|')[1]) > 0 and int(l.split('|')[3]) > 0 and int(l.split('|')[5]) > 0)}/{total} models")
 PYEOF
 
 echo ""

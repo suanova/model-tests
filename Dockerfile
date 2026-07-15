@@ -10,7 +10,6 @@
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests all 3
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests chat
-#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests all 3 --responses
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests responses-single glm-5.1
 
 FROM python:3.11-slim
