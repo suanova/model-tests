@@ -3,7 +3,6 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 IMAGE_NAME="harbor.isuanova.com/yangle/claude-code"
-BASE_URL="https://cuberouter.cn"
 
 # ── Colors ──────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -25,6 +24,12 @@ log_step()  { echo -e "${YELLOW}[STEP]${NC} $1" >&2; }
 # Looks for a .env file in the script directory. If present, exports its
 # variables (KEY=VALUE lines) into the environment, but only if not already
 # set — so explicit env vars always take precedence over the file.
+#
+# IMPORTANT: This must be called BEFORE any defaults are set, so that .env
+# values override hardcoded defaults. The call order is:
+#   1. source common.sh  (no defaults yet)
+#   2. require_api_key   → load_env_file  → exports from .env
+#   3. Then set defaults for anything still unset (BASE_URL, etc.)
 load_env_file() {
     local env_file="${SCRIPT_DIR}/.env"
     if [ -f "${env_file}" ]; then
@@ -50,6 +55,8 @@ load_env_file() {
 # ── Require API key ─────────────────────────────────────────────────
 require_api_key() {
     load_env_file
+    # Set defaults AFTER load_env_file so .env values take precedence
+    BASE_URL="${BASE_URL:-https://cuberouter.cn}"
     if [ -z "${API_KEY:-}" ]; then
         log_fail "API_KEY is required."
         log_fail "Set it in ${SCRIPT_DIR}/.env as: API_KEY=your_key"
