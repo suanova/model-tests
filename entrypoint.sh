@@ -9,6 +9,8 @@
 #   chat                   Run chat completions API across all models.
 #   messages               Run Anthropic Messages API across all models.
 #   responses              Run OpenAI Responses API across all models.
+#   compare [rounds]       Compare two gateways: shared, A-only, B-only models across all 3 APIs.
+#                         Requires API_KEY_B and BASE_URL_B (or --b-key/--b-url flags).
 #   chat-single [model]   Run chat completions API for one model (defaults to glm-5.1).
 #   messages-single [model]  Run Anthropic Messages API for one model (defaults to glm-5.1).
 #   responses-single [model]  Run OpenAI Responses API for one model (defaults to glm-5.1).
@@ -37,14 +39,20 @@ Subcommands:
   chat                      Run chat completions API (/v1/chat/completions) across all models.
   messages                  Run Anthropic Messages API (/v1/messages) across all models.
   responses                 Run OpenAI Responses API (/v1/responses) across all models.
+  compare [rounds] [--b-key KEY] [--b-url URL]
+                            Compare two gateways (A = API_KEY/BASE_URL, B = API_KEY_B/BASE_URL_B).
+                            Tests shared models on both gateways, A-only/B-only on their own.
+                            Rounds default to 1.
   chat-single [model]       Run chat completions API for one model (defaults to glm-5.1).
   messages-single [model]   Run Anthropic Messages API for one model (defaults to glm-5.1).
   responses-single [model]  Run OpenAI Responses API for one model (defaults to glm-5.1).
   help                      Show this help.
 
 Environment:
-  API_KEY        Required. Your API key (pass via -e API_KEY=...).
-  BASE_URL       Optional. Gateway base URL (defaults to https://cuberouter.cn).
+  API_KEY        Required. Your API key for gateway A (pass via -e API_KEY=...).
+  BASE_URL       Optional. Gateway A base URL (defaults to https://cuberouter.cn).
+  API_KEY_B      Required for "compare". API key for gateway B.
+  BASE_URL_B     Required for "compare". Base URL for gateway B.
   TEST_TIMEOUT   Optional. Per-model timeout in seconds (defaults to 30).
 
 Examples:
@@ -53,6 +61,8 @@ Examples:
   docker run --rm -e API_KEY=sk-... <image> chat
   docker run --rm -e API_KEY=sk-... <image> messages
   docker run --rm -e API_KEY=sk-... <image> responses
+  docker run --rm -e API_KEY=sk-... -e API_KEY_B=sk-... -e BASE_URL_B=https://... <image> compare
+  docker run --rm -e API_KEY=sk-... -e API_KEY_B=sk-... -e BASE_URL_B=https://... <image> compare 3 --b-key sk-alt --b-url https://alt.example.com
   docker run --rm -e API_KEY=sk-... <image> responses-single glm-5.1
 EOF
 }
@@ -69,6 +79,9 @@ case "$SUBCMD" in
         ;;
     responses)
         exec bash "$SCRIPT_DIR/responses_api_all.sh" "$@"
+        ;;
+    compare)
+        exec bash "$SCRIPT_DIR/compare_gateways.sh" "$@"
         ;;
     chat-single)
         exec bash "$SCRIPT_DIR/chat_api_single.sh" "$@"

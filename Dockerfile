@@ -34,6 +34,7 @@ COPY common.sh \
      responses_api_single.sh \
      responses_api_all.sh \
      run_all_api_tests.sh \
+     compare_gateways.sh \
      entrypoint.sh \
      .env.example \
      whitelist.txt.example \

@@ -168,6 +168,7 @@ docker run --rm -e API_KEY harbor.isuanova.com/yangle/model-tests <subcommand>
 | `chat` | `chat_api_all.sh` — chat completions, all models | — |
 | `messages` | `messages_api_all.sh` — Anthropic Messages, all models | — |
 | `responses` | `responses_api_all.sh` — Responses API, all models | — |
+| `compare` | `compare_gateways.sh` — compare two gateways (shared, A-only, B-only) | `[rounds]` `[--b-key KEY]` `[--b-url URL]` |
 | `chat-single` | `chat_api_single.sh` — chat completions, one model | `[model]` (default glm-5.1) |
 | `messages-single` | `messages_api_single.sh` — Anthropic Messages, one model | `[model]` (default glm-5.1) |
 | `responses-single` | `responses_api_single.sh` — Responses API, one model | `[model]` (default glm-5.1) |
@@ -181,6 +182,8 @@ Extra args after the subcommand are forwarded to the underlying script.
 |----------|---------|-------------|
 | `API_KEY` | (required) | Your API key |
 | `BASE_URL` | `https://cuberouter.cn` | Gateway base URL |
+| `API_KEY_B` | (required for compare) | Gateway B API key |
+| `BASE_URL_B` | (required for compare) | Gateway B base URL |
 | `TEST_TIMEOUT` | `30` | Per-model timeout in seconds |
 
 The image does **not** bake in a whitelist — to restrict models, run locally or mount a `whitelist.txt`:
@@ -199,11 +202,75 @@ docker run --rm \
 |----------|---------|-------------|
 | `API_KEY` | (required) | Your API key — set in `.env` or as an env var |
 | `BASE_URL` | `https://cuberouter.cn` | Gateway base URL (can also be set in `.env`) |
+| `API_KEY_B` | (required for compare) | Gateway B API key — set in `.env` or via `--b-key` |
+| `BASE_URL_B` | (required for compare) | Gateway B base URL — set in `.env` or via `--b-url` |
 | `TEST_TIMEOUT` | `30` | Per-model timeout in seconds (applies to all single-model tests: chat completions, Anthropic Messages, Responses API, and Claude Code) |
+
+## Gateway Comparison
+
+`compare_gateways.sh` compares the model offerings of **two** API gateways and tests their overlap. It uses the existing `API_KEY` + `BASE_URL` as **gateway A**, and adds `API_KEY_B` + `BASE_URL_B` for **gateway B**.
+
+For each gateway it fetches `/v1/models`, filters for chat models, and computes three groups:
+
+| Group | Tested on | APIs tested |
+|-------|-----------|-------------|
+| **Shared** (models on both gateways) | Both A and B | Chat + Messages + Responses (6 tests per model) |
+| **A-only** (models only on A) | Gateway A only | Chat + Messages + Responses (3 tests per model) |
+| **B-only** (models only on B) | Gateway B only | Chat + Messages + Responses (3 tests per model) |
+
+A model counts as **supporting** an API on a gateway if it passes at least once across all rounds — same rule as `run_all_api_tests.sh`.
+
+### Usage
+
+```bash
+# Via .env — add API_KEY_B and BASE_URL_B alongside your existing API_KEY/BASE_URL:
+#   API_KEY_B=sk-other-key
+#   BASE_URL_B=https://other-gateway.example.com
+bash compare_gateways.sh           # 1 round
+bash compare_gateways.sh 3         # 3 rounds
+
+# Via env vars:
+API_KEY_B=sk-... BASE_URL_B=https://... bash compare_gateways.sh
+
+# Via CLI flags (override env/.env):
+bash compare_gateways.sh --b-key sk-... --b-url https://... 3
+
+# Via Docker:
+docker run --rm \
+    -e API_KEY -e API_KEY_B -e BASE_URL_B \
+    harbor.isuanova.com/yangle/model-tests compare
+
+docker run --rm \
+    -e API_KEY \
+    -e API_KEY_B=sk-... -e BASE_URL_B=https://... \
+    harbor.isuanova.com/yangle/model-tests compare 3 --b-key sk-alt --b-url https://alt.example.com
+```
+
+### Output
+
+The comparison prints three tables:
+
+1. **Shared models** — each model row shows Chat A/B, Messages A/B, Responses A/B side by side, so you can see whether a model works on both gateways or just one.
+2. **A-only models** — standard 3-API table tested against gateway A.
+3. **B-only models** — standard 3-API table tested against gateway B.
+
+Followed by a grand-total summary line.
+
+### Config
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `API_KEY` | (required) | Gateway A API key — existing config |
+| `BASE_URL` | `https://cuberouter.cn` | Gateway A base URL — existing config |
+| `API_KEY_B` | (required for compare) | Gateway B API key — set in `.env` or via `--b-key` |
+| `BASE_URL_B` | (required for compare) | Gateway B base URL — set in `.env` or via `--b-url` |
+| `TEST_TIMEOUT` | `30` | Per-model timeout in seconds |
+
+CLI flags override env/.env values: `--b-key <key>` and `--b-url <url>`.
 
 ## Whitelist (optional)
 
-To test only a subset of models, create a `whitelist.txt` file in the script directory (one model ID per line, `#` for comments). All `*_all.sh` scripts and `run_all_api_tests.sh` respect it:
+To test only a subset of models, create a `whitelist.txt` file in the script directory (one model ID per line, `#` for comments). All `*_all.sh` scripts, `run_all_api_tests.sh`, and `compare_gateways.sh` respect it:
 
 ```bash
 cp whitelist.txt.example whitelist.txt
@@ -228,6 +295,7 @@ model-tests/
 ├── entrypoint.sh             # Docker entrypoint: maps subcommands (all/chat/messages/responses/...) to scripts
 ├── common.sh                 # Shared helpers (.env loader, list_chat_models, summary table, settings.json)
 ├── run_all_api_tests.sh      # Combined: chat + messages + responses APIs, all models, N rounds, one table
+├── compare_gateways.sh       # Compare two gateways: shared, A-only, B-only models across 3 APIs
 ├── chat_api_single.sh        # Chat completions API: test one model (defaults to glm-5.1)
 ├── chat_api_all.sh           # Chat completions API: iterate all suitable models
 ├── messages_api_single.sh    # Anthropic Messages API: test one model (defaults to glm-5.1)
@@ -261,4 +329,3 @@ model-tests/
 
 - The runner image (`harbor.isuanova.com/yangle/model-tests`) is pulled from the registry and reused across all API model tests — no build needed. To update it, `docker pull` the latest tag. The Claude Code image (`harbor.isuanova.com/yangle/claude-code`) is built locally with `run_claude_code_tests.sh` (or the `docker build` line in Option B); rebuild it to pick up a newer `claude` CLI version.
 - Each model test starts a fresh container (~1-2s startup) plus one API call (~5-30s).
-Test scripts that verify models work across a gateway's API endpoints — the OpenAI-style **Chat Completions** API, the **Anthropic Messages** API, and the **OpenAI Responses** API — plus a test that exercises the full **Claude Code** client path on top of the Messages API.
