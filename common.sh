@@ -67,6 +67,8 @@ require_api_key() {
     load_env_file
     # Set defaults AFTER load_env_file so .env values take precedence
     BASE_URL="${BASE_URL:-https://cuberouter.cn}"
+    # Strip trailing slash so ${BASE_URL}/v1/models never becomes a double-slash
+    BASE_URL="${BASE_URL%/}"
 
     # Determine API key source after loading
     if [ "${api_key_was_set}" -eq 1 ]; then
