@@ -92,6 +92,43 @@ require_api_key() {
     fi
 }
 
+# ── Timing helpers (curl write-out → result line) ──────────────────
+# Each single-model script captures curl's time_connect, time_starttransfer,
+# and time_total, and appends a timing field to its result line so the
+# aggregating scripts (run_all_api_tests.sh, compare_gateways.sh) can average
+# latency across rounds.
+#
+# Result line format: STATUS|MODEL|TIMING|DETAIL
+#   TIMING = conn=<ms>;ttfb=<ms>;tot=<ms>   (raw integer milliseconds)
+#   conn  ← time_connect         (TCP connect)
+#   ttfb  ← time_starttransfer   (time to first byte)
+#   tot   ← time_total           (end-to-end)
+
+# Convert a curl seconds-float to integer milliseconds (locale-safe).
+_to_ms() {
+    awk -v t="${1:-0}" 'BEGIN{
+        if (t ~ /^[0-9]*\.?[0-9]+$/) printf "%d", (t * 1000) + 0.5;
+        else print 0
+    }'
+}
+
+# Build the TIMING field from curl's three timing values (seconds, floats).
+# Usage: build_timing_field <time_connect> <time_starttransfer> <time_total>
+build_timing_field() {
+    local conn ttfb tot
+    conn="$(_to_ms "${1:-0}")"
+    ttfb="$(_to_ms "${2:-0}")"
+    tot="$(_to_ms "${3:-0}")"
+    echo "conn=${conn};ttfb=${ttfb};tot=${tot}"
+}
+
+# Extract a timing metric (ms) from a single-script result line.
+# Usage: extract_timing <conn|ttfb|tot> <line>
+# Prints the ms integer, or empty if absent (e.g. no timing on the line).
+extract_timing() {
+    printf '%s' "$2" | grep -oE "$1=[0-9]+" | head -n1 | cut -d= -f2
+}
+
 # ── List chat models from the gateway ───────────────────────────────
 # Fetches /v1/models, filters out non-chat models (TTS, image, video, embedding,
 # vision-only), and applies the whitelist (whitelist.txt) if present.

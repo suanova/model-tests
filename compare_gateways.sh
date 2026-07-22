@@ -66,16 +66,11 @@ done
 require_api_key
 
 # ── Resolve gateway B config ─────────────────────────────────────────
-# Load .env first (so .env values fill in anything not yet set), then
-# apply CLI overrides. API_KEY_B / BASE_URL_B are NOT part of the
-# existing require_api_key flow, so we load the env file ourselves.
 load_env_file
 BASE_URL_B="${BASE_URL_B:-}"
 API_KEY_B="${API_KEY_B:-}"
-# CLI overrides take precedence
 if [ -n "${CLI_B_KEY}" ]; then API_KEY_B="${CLI_B_KEY}"; fi
 if [ -n "${CLI_B_URL}" ]; then BASE_URL_B="${CLI_B_URL}"; fi
-# Strip trailing slash
 BASE_URL_B="${BASE_URL_B%/}"
 
 if [ -z "${API_KEY_B}" ]; then
@@ -94,8 +89,6 @@ if [ -z "${BASE_URL_B}" ]; then
 fi
 
 # ── Derive short gateway labels from URLs ────────────────────────────
-# Extract the domain keyword (e.g. "cuberouter" from https://cuberouter.cn,
-# "modelverse" from https://api.modelverse.cn).
 GW_A_LABEL="$(echo "${BASE_URL}" | sed -E 's|^https?://([^/]+).*$|\1|' | sed -E 's|^(api\.)?([^.]+).*$|\2|')"
 GW_B_LABEL="$(echo "${BASE_URL_B}" | sed -E 's|^https?://([^/]+).*$|\1|' | sed -E 's|^(api\.)?([^.]+).*$|\2|')"
 
@@ -169,7 +162,6 @@ with open(out_file, 'w') as out:
         out.write(f"B:{m}\n")
 PYEOF
 
-# Parse the set file
 SHARED_COUNT="$(grep '^SHARED:' "${SET_FILE}" | cut -d: -f2)"
 A_ONLY_COUNT="$(grep '^A_ONLY:' "${SET_FILE}" | cut -d: -f2)"
 B_ONLY_COUNT="$(grep '^B_ONLY:' "${SET_FILE}" | cut -d: -f2)"
@@ -181,10 +173,8 @@ B_ONLY_MODELS="$(grep '^B:' "${SET_FILE}" | cut -d: -f2)"
 rm -f "${SET_FILE}" "${MODELS_A_FILE}" "${MODELS_B_FILE}"
 
 # ── Test helper: run one API test for one model on one gateway ───────
-# Invokes the single-model script with the gateway's url/key injected
-# via env vars. Returns a PASS/FAIL result line.
 run_single_test() {
-    local script="$1"     # e.g. chat_api_single.sh
+    local script="$1"
     local model="$2"
     local gw_url="$3"
     local gw_key="$4"
@@ -200,18 +190,19 @@ run_single_test() {
 }
 
 # ── Run tests ────────────────────────────────────────────────────────
-# Result line format: <gateway>|<model>|<chat_passes>|<rounds>|<msg_passes>|<rounds>|<resp_passes>|<rounds>
+# Result line format: <gateway>|<model>|<chat_passes>|<rounds>|<msg_passes>|<rounds>|<resp_passes>|<rounds>|<lat_conn>|<lat_ttfb>|<lat_tot>
 RESULTS_FILE="$(mktemp)"
 
 TEST_START_TIME="$(date +%s)"
 
 test_model_on_gateway() {
     local model="$1"
-    local gw_label="$2"    # e.g. "cuberouter" or "modelverse"
+    local gw_label="$2"
     local gw_url="$3"
     local gw_key="$4"
 
     local chat_passes=0 msg_passes=0 resp_passes=0
+    local lat_conn_sum=0 lat_ttfb_sum=0 lat_tot_sum=0 lat_pass_count=0
 
     echo -e "  ${gw_label}:" >&2
     for round in $(seq 1 "${ROUNDS}"); do
@@ -220,9 +211,12 @@ test_model_on_gateway() {
         chat_line="$(run_single_test chat_api_single.sh "${model}" "${gw_url}" "${gw_key}")"
         if echo "${chat_line}" | grep -q "^PASS|"; then
             chat_passes=$((chat_passes + 1))
-            printf "    Chat Completions  %s/%s  ${GREEN}PASS${NC}\n" "${round}" "${ROUNDS}" >&2
+            _tc="$(extract_timing conn "${chat_line}")"; _tt="$(extract_timing ttfb "${chat_line}")"; _to="$(extract_timing tot "${chat_line}")"
+            printf "    Chat Completions  %s/%s  ${GREEN}PASS${NC}  conn=%sms, ttfb=%sms, tot=%sms\n" "${round}" "${ROUNDS}" "${_tc:-0}" "${_tt:-0}" "${_to:-0}" >&2
+            lat_conn_sum=$((lat_conn_sum + ${_tc:-0})); lat_ttfb_sum=$((lat_ttfb_sum + ${_tt:-0})); lat_tot_sum=$((lat_tot_sum + ${_to:-0}))
+            lat_pass_count=$((lat_pass_count + 1))
         else
-            local chat_err="$(printf '%s' "${chat_line}" | cut -d'|' -f3-)"
+            local chat_err="$(printf '%s' "${chat_line}" | cut -d'|' -f4-)"
             printf "    Chat Completions  %s/%s  ${RED}FAIL${NC}  %s\n" "${round}" "${ROUNDS}" "${chat_err}" >&2
         fi
 
@@ -231,9 +225,12 @@ test_model_on_gateway() {
         msg_line="$(run_single_test messages_api_single.sh "${model}" "${gw_url}" "${gw_key}")"
         if echo "${msg_line}" | grep -q "^PASS|"; then
             msg_passes=$((msg_passes + 1))
-            printf "    Messages API      %s/%s  ${GREEN}PASS${NC}\n" "${round}" "${ROUNDS}" >&2
+            _tc="$(extract_timing conn "${msg_line}")"; _tt="$(extract_timing ttfb "${msg_line}")"; _to="$(extract_timing tot "${msg_line}")"
+            printf "    Messages API      %s/%s  ${GREEN}PASS${NC}  conn=%sms, ttfb=%sms, tot=%sms\n" "${round}" "${ROUNDS}" "${_tc:-0}" "${_tt:-0}" "${_to:-0}" >&2
+            lat_conn_sum=$((lat_conn_sum + ${_tc:-0})); lat_ttfb_sum=$((lat_ttfb_sum + ${_tt:-0})); lat_tot_sum=$((lat_tot_sum + ${_to:-0}))
+            lat_pass_count=$((lat_pass_count + 1))
         else
-            local msg_err="$(printf '%s' "${msg_line}" | cut -d'|' -f3-)"
+            local msg_err="$(printf '%s' "${msg_line}" | cut -d'|' -f4-)"
             printf "    Messages API      %s/%s  ${RED}FAIL${NC}  %s\n" "${round}" "${ROUNDS}" "${msg_err}" >&2
         fi
 
@@ -242,41 +239,41 @@ test_model_on_gateway() {
         resp_line="$(run_single_test responses_api_single.sh "${model}" "${gw_url}" "${gw_key}")"
         if echo "${resp_line}" | grep -q "^PASS|"; then
             resp_passes=$((resp_passes + 1))
-            printf "    Responses API     %s/%s  ${GREEN}PASS${NC}\n" "${round}" "${ROUNDS}" >&2
+            _tc="$(extract_timing conn "${resp_line}")"; _tt="$(extract_timing ttfb "${resp_line}")"; _to="$(extract_timing tot "${resp_line}")"
+            printf "    Responses API     %s/%s  ${GREEN}PASS${NC}  conn=%sms, ttfb=%sms, tot=%sms\n" "${round}" "${ROUNDS}" "${_tc:-0}" "${_tt:-0}" "${_to:-0}" >&2
+            lat_conn_sum=$((lat_conn_sum + ${_tc:-0})); lat_ttfb_sum=$((lat_ttfb_sum + ${_tt:-0})); lat_tot_sum=$((lat_tot_sum + ${_to:-0}))
+            lat_pass_count=$((lat_pass_count + 1))
         else
-            local resp_err="$(printf '%s' "${resp_line}" | cut -d'|' -f3-)"
+            local resp_err="$(printf '%s' "${resp_line}" | cut -d'|' -f4-)"
             printf "    Responses API     %s/%s  ${RED}FAIL${NC}  %s\n" "${round}" "${ROUNDS}" "${resp_err}" >&2
         fi
     done
 
-    echo "${gw_label}|${model}|${chat_passes}|${ROUNDS}|${msg_passes}|${ROUNDS}|${resp_passes}|${ROUNDS}"
+    local lat_conn="" lat_ttfb="" lat_tot=""
+    if [ "${lat_pass_count}" -gt 0 ]; then
+        lat_conn=$(( (lat_conn_sum + lat_pass_count / 2) / lat_pass_count ))
+        lat_ttfb=$(( (lat_ttfb_sum + lat_pass_count / 2) / lat_pass_count ))
+        lat_tot=$(( (lat_tot_sum + lat_pass_count / 2) / lat_pass_count ))
+    fi
+
+    echo "${gw_label}|${model}|${chat_passes}|${ROUNDS}|${msg_passes}|${ROUNDS}|${resp_passes}|${ROUNDS}|${lat_conn}|${lat_ttfb}|${lat_tot}"
 }
 
-# ── Parallel variant: runs same model on both gateways simultaneously ──
-# Gateway A's progress streams to stderr live (in real time).
-# Gateway B's progress is buffered to a temp file and printed only
-# after gateway A finishes — so the user sees A's output immediately,
-# then B's output appears all at once once both are done.
+# ── Parallel variant ────────────────────────────────────────────────
 test_model_parallel() {
     local model="$1"
     local log_b="$(mktemp)"
     local result_a="$(mktemp)"
     local result_b="$(mktemp)"
 
-    # Launch gateway B in background — progress buffered, results to temp file
     ( test_model_on_gateway "${model}" "${GW_B_LABEL}" "${BASE_URL_B}" "${API_KEY_B}" ) 2>"${log_b}" >"${result_b}" &
     local pid_b=$!
 
-    # Run gateway A in foreground — progress streams live to stderr, result to temp file
     test_model_on_gateway "${model}" "${GW_A_LABEL}" "${BASE_URL}" "${API_KEY}" >"${result_a}"
 
-    # Gateway A is done; now wait for gateway B (if still running)
     wait "${pid_b}" 2>/dev/null
-
-    # Print gateway B's buffered progress now
     cat "${log_b}" >&2
 
-    # Merge result lines into the shared RESULTS_FILE
     cat "${result_a}" >> "${RESULTS_FILE}"
     cat "${result_b}" >> "${RESULTS_FILE}"
 
@@ -314,17 +311,12 @@ TEST_END_TIME="$(date +%s)"
 TEST_ELAPSED=$((TEST_END_TIME - TEST_START_TIME))
 
 # ── Output comparison table ─────────────────────────────────────────
-echo -e "${BOLD}══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════${NC}"
-echo -e "${BOLD}  Gateway Comparison Results (${ROUNDS} round(s) per API)${NC}"
-echo -e "${BOLD}  ${GW_A_LABEL}: ${BASE_URL}  |  ${GW_B_LABEL}: ${BASE_URL_B}${NC}"
-echo -e "${BOLD}  Started: $(date -d @${TEST_START_TIME} '+%Y-%m-%d %H:%M:%S')  |  Elapsed: ${TEST_ELAPSED}s${NC}"
-echo -e "${BOLD}══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════${NC}"
-echo ""
 
 python3 - "${RESULTS_FILE}" "${ROUNDS}" \
     "${A_TOTAL}" "${A_NONCHAT}" "${A_NOTWL}" "${A_COUNT}" \
     "${B_TOTAL}" "${B_NONCHAT}" "${B_NOTWL}" "${B_COUNT}" \
-    "${GW_A_LABEL}" "${GW_B_LABEL}" "${WHITELIST_AVAILABLE}" <<'PYEOF'
+    "${GW_A_LABEL}" "${GW_B_LABEL}" "${WHITELIST_AVAILABLE}" \
+    "${BASE_URL}" "${BASE_URL_B}" "${TEST_START_TIME}" "${TEST_ELAPSED}" <<'PYEOF'
 import sys
 
 GREEN = '\033[32m'
@@ -345,6 +337,17 @@ b_count = sys.argv[10] if len(sys.argv) > 10 else ''
 gw_a = sys.argv[11] if len(sys.argv) > 11 else 'A'
 gw_b = sys.argv[12] if len(sys.argv) > 12 else 'B'
 wl_available = sys.argv[13] if len(sys.argv) > 13 else '0'
+base_url_a = sys.argv[14] if len(sys.argv) > 14 else ''
+base_url_b = sys.argv[15] if len(sys.argv) > 15 else ''
+test_start_time = sys.argv[16] if len(sys.argv) > 16 else ''
+test_elapsed = sys.argv[17] if len(sys.argv) > 17 else ''
+
+# Format the start timestamp; test_start_time is a unix epoch from the shell.
+import datetime
+try:
+    started_str = datetime.datetime.fromtimestamp(int(test_start_time)).strftime('%Y-%m-%d %H:%M:%S')
+except (ValueError, TypeError):
+    started_str = test_start_time
 
 with open(results_file) as f:
     lines = [l.rstrip('\n') for l in f if l.strip()]
@@ -359,10 +362,14 @@ def parse_line(line):
     msg_r = int(parts[5]) if len(parts) > 5 else rounds
     resp_p = int(parts[6]) if len(parts) > 6 else 0
     resp_r = int(parts[7]) if len(parts) > 7 else rounds
+    lat_conn = parts[8] if len(parts) > 8 else ''
+    lat_ttfb = parts[9] if len(parts) > 9 else ''
+    lat_tot = parts[10] if len(parts) > 10 else ''
     return {'gw': gw, 'model': model,
             'chat_p': chat_p, 'chat_r': chat_r,
             'msg_p': msg_p, 'msg_r': msg_r,
-            'resp_p': resp_p, 'resp_r': resp_r}
+            'resp_p': resp_p, 'resp_r': resp_r,
+            'lat_conn': lat_conn, 'lat_ttfb': lat_ttfb, 'lat_tot': lat_tot}
 
 parsed = [parse_line(l) for l in lines]
 
@@ -382,27 +389,35 @@ b_only = sorted([m for m in by_model if len(by_model[m]) == 1 and gw_b in by_mod
 # Column widths
 W_MODEL = 34
 W_NUM = 4
-W_GAP = 6   # spaces between the two gateway groups
+W_GAP = 6
+
+def fmt_ms(v):
+    """Format milliseconds: <1000ms → '___ms', ≥1000ms → seconds."""
+    if not v or v == '':
+        return '    —'
+    v = int(v)
+    if v < 1000:
+        return f'{v:>3}ms'
+    else:
+        return f'{v/1000:.2f}s'
+
+def fmt_latency(conn, ttfb, tot):
+    """Format combined latency: conn/ttfb/tot."""
+    return f'{fmt_ms(conn)}/{fmt_ms(ttfb)}/{fmt_ms(tot)}'
 
 def check_detail(p, p_key, rounds):
-    """Return pass/total with color, e.g. '0/1' (red) or '2/3' (green)."""
     ok = p[p_key] > 0
     color = GREEN if ok else RED
     return f'{color}{p[p_key]}/{rounds}{NC}'
 
 def right_cell(content, visible_len, width):
-    """Right-align a cell whose visible characters are `visible_len` long within `width`.
-    `content` may contain ANSI escape codes. Pads with spaces on the left."""
     pad = width - visible_len
     return ' ' * pad + content
 
 def dash_cell(width):
-    """Return '—' positioned at the same column as '/' in '1/1' (right-aligned)."""
-    # '1/1' right-aligned in width W: the '/' is at offset W-2 (0-indexed).
-    # Place '—' at that same offset.
     return ' ' * (width - 2) + '—' + ' '
 
-# ── Single unified table ──────────────────────────────────────────
+# ── Gateway info lines ──────────────────────────────────────────────
 def fmt_gw_line(total, nonchat, notwl, kept, wl_available):
     parts = [f'{total} fetched, {nonchat} non-text dropped']
     if wl_available == '1':
@@ -415,39 +430,57 @@ print(f"{BOLD}  {gw_b}: {fmt_gw_line(b_total, b_nonchat, b_notwl, b_count, wl_av
 print(f"  Shared: {len(shared)}  |  {gw_a}-only: {len(a_only)}  |  {gw_b}-only: {len(b_only)}")
 print()
 
-api_names = ['Chat', 'Messages', 'Responses']
+api_names = ['Chat', 'Msg', 'Resp']
 p_keys = ['chat_p', 'msg_p', 'resp_p']
 stat_keys = ['chat', 'msg', 'resp']
+lat_header = 'Latency(conn/ttfb/tot)'
 
-# Each API column must fit its header name AND the 3-char value ✓/1 (or ✗/0).
-# We pad manually to avoid ANSI escape codes breaking Python's str formatting.
+# Each API column width: max(len(name), 6) — fits "2/2 ✓" (6 visible) or header name
 api_widths = [max(len(name), 6) for name in api_names]
+# Latency column width: max of header length and typical value length
+# "42ms/1.20s/1.25s" → 17 chars, "    —/    —/    —" → 17 chars
+W_LAT = max(len(lat_header), 17)
 
-gw_span = sum(api_widths) + 2 * (len(api_widths) - 1)  # same for both gateways
+# Gateway span = Chat + Msg + Resp + Latency + 3 inter-column gaps (2 spaces each)
+gw_span = sum(api_widths) + W_LAT + 2 * 4  # 4 gaps between 4 columns
+
 left_width = W_NUM + 2 + W_MODEL
-total_width = left_width + 2 + gw_span + W_GAP + gw_span + 6
+total_width = left_width + 2 + gw_span + W_GAP + gw_span
+
+# ── Title block (sized to the table) ────────────────────────────────
+border = '═' * total_width
+print(f"{BOLD}{border}{NC}")
+print(f"{BOLD}  Gateway Comparison Results ({rounds} round(s) per API){NC}")
+print(f"{BOLD}  {gw_a}: {base_url_a}  |  {gw_b}: {base_url_b}{NC}")
+print(f"{BOLD}  Started: {started_str}  |  Elapsed: {test_elapsed}s{NC}")
+print(f"{BOLD}{border}{NC}")
+print()
 
 # ── Two-row header ──────────────────────────────────────────────────
 row1_left = ' ' * (left_width + 2)
-row1_gw_a = f'{BOLD}{"─ " + gw_a + " ─":^{gw_span}}{NC}'
+row1_gw_a = f'{BOLD}{"─" * 13 + " " + gw_a + " " + "─" * 13:^{gw_span}}{NC}'
 row1_gap = ' ' * W_GAP
-row1_gw_b = f'{BOLD}{"─ " + gw_b + " ─":^{gw_span}}{NC}'
+row1_gw_b = f'{BOLD}{"─" * 13 + " " + gw_b + " " + "─" * 13:^{gw_span}}{NC}'
 row1 = row1_left + row1_gw_a + row1_gap + row1_gw_b
 
 row2_cols = [f'{BOLD}{"#":<{W_NUM}}{NC}', f'{BOLD}{"Model":<{W_MODEL}}{NC}']
 for i, name in enumerate(api_names):
     row2_cols.append(f'{BOLD}{name:>{api_widths[i]}}{NC}')
+row2_cols.append(f'{BOLD}{lat_header:>{W_LAT}}{NC}')
 row2_cols.append(' ' * W_GAP)
 for i, name in enumerate(api_names):
     row2_cols.append(f'{BOLD}{name:>{api_widths[i]}}{NC}')
+row2_cols.append(f'{BOLD}{lat_header:>{W_LAT}}{NC}')
 
 print(row1)
 print('  '.join(row2_cols))
 print("─" * total_width)
 
-# Stats accumulators
-stats = {gw_a: {'chat': 0, 'msg': 0, 'resp': 0, 'total': 0},
-         gw_b: {'chat': 0, 'msg': 0, 'resp': 0, 'total': 0}}
+# Stats accumulators — per gateway, for summary
+stats = {gw_a: {'chat': 0, 'msg': 0, 'resp': 0, 'total': 0, 'passed': 0,
+                'lat_conn_vals': [], 'lat_ttfb_vals': [], 'lat_tot_vals': []},
+         gw_b: {'chat': 0, 'msg': 0, 'resp': 0, 'total': 0, 'passed': 0,
+                'lat_conn_vals': [], 'lat_ttfb_vals': [], 'lat_tot_vals': []}}
 
 all_ordered = shared + a_only + b_only
 for idx, m in enumerate(all_ordered, 1):
@@ -455,19 +488,35 @@ for idx, m in enumerate(all_ordered, 1):
     b_data = by_model[m].get(gw_b)
 
     row_cols = [f'{idx:<{W_NUM}}', f'{m:<{W_MODEL}}']
-    # gw_a columns
+    # gw_a columns: Chat, Msg, Resp, Latency
     for i, p_key in enumerate(p_keys):
         sk = stat_keys[i]
         if a_data:
             val = check_detail(a_data, p_key, rounds)
-            row_cols.append(right_cell(val, 3, api_widths[i]))  # 0/1 is 3 visible chars
+            row_cols.append(right_cell(val, 3, api_widths[i]))
             if a_data[p_key] > 0:
                 stats[gw_a][sk] += 1
+                stats[gw_a]['passed'] += a_data[p_key]
             stats[gw_a]['total'] += 1
         else:
             row_cols.append(dash_cell(api_widths[i]))
+    # gw_a latency
+    if a_data and (a_data['lat_conn'] or a_data['lat_ttfb'] or a_data['lat_tot']):
+        lat_str = fmt_latency(a_data['lat_conn'], a_data['lat_ttfb'], a_data['lat_tot'])
+        row_cols.append(right_cell(lat_str, len(lat_str), W_LAT))
+        # Collect for gateway-wide average (only if there are values)
+        if a_data['lat_conn']:
+            stats[gw_a]['lat_conn_vals'].append(int(a_data['lat_conn']))
+        if a_data['lat_ttfb']:
+            stats[gw_a]['lat_ttfb_vals'].append(int(a_data['lat_ttfb']))
+        if a_data['lat_tot']:
+            stats[gw_a]['lat_tot_vals'].append(int(a_data['lat_tot']))
+    elif a_data:
+        row_cols.append(right_cell('—/—/—', 5, W_LAT))
+    else:
+        row_cols.append(right_cell('—/—/—', 5, W_LAT))
     row_cols.append(' ' * W_GAP)
-    # gw_b columns
+    # gw_b columns: Chat, Msg, Resp, Latency
     for i, p_key in enumerate(p_keys):
         sk = stat_keys[i]
         if b_data:
@@ -475,9 +524,24 @@ for idx, m in enumerate(all_ordered, 1):
             row_cols.append(right_cell(val, 3, api_widths[i]))
             if b_data[p_key] > 0:
                 stats[gw_b][sk] += 1
+                stats[gw_b]['passed'] += b_data[p_key]
             stats[gw_b]['total'] += 1
         else:
             row_cols.append(dash_cell(api_widths[i]))
+    # gw_b latency
+    if b_data and (b_data['lat_conn'] or b_data['lat_ttfb'] or b_data['lat_tot']):
+        lat_str = fmt_latency(b_data['lat_conn'], b_data['lat_ttfb'], b_data['lat_tot'])
+        row_cols.append(right_cell(lat_str, len(lat_str), W_LAT))
+        if b_data['lat_conn']:
+            stats[gw_b]['lat_conn_vals'].append(int(b_data['lat_conn']))
+        if b_data['lat_ttfb']:
+            stats[gw_b]['lat_ttfb_vals'].append(int(b_data['lat_ttfb']))
+        if b_data['lat_tot']:
+            stats[gw_b]['lat_tot_vals'].append(int(b_data['lat_tot']))
+    elif b_data:
+        row_cols.append(right_cell('—/—/—', 5, W_LAT))
+    else:
+        row_cols.append(right_cell('—/—/—', 5, W_LAT))
 
     print('  '.join(row_cols))
 
@@ -488,8 +552,24 @@ print()
 print(f"{BOLD}  Summary:{NC}")
 a_tested = len([m for m in all_ordered if by_model[m].get(gw_a)])
 b_tested = len([m for m in all_ordered if by_model[m].get(gw_b)])
-print(f"    {gw_a}:  Chat {stats[gw_a]['chat']}/{a_tested} ✓  |  Messages {stats[gw_a]['msg']}/{a_tested} ✓  |  Responses {stats[gw_a]['resp']}/{a_tested} ✓")
-print(f"    {gw_b}:  Chat {stats[gw_b]['chat']}/{b_tested} ✓  |  Messages {stats[gw_b]['msg']}/{b_tested} ✓  |  Responses {stats[gw_b]['resp']}/{b_tested} ✓")
+
+# Gateway-wide average latency (over all models that had values)
+def avg_lat(vals):
+    if not vals:
+        return '—'
+    avg = sum(vals) / len(vals)
+    return fmt_ms(str(int(avg + 0.5)))
+
+for gw, tested, label in [(gw_a, a_tested, gw_a), (gw_b, b_tested, gw_b)]:
+    print(f"    {label}:")
+    print(f"      Chat {stats[gw]['chat']}/{tested} ✓  |  Messages {stats[gw]['msg']}/{tested} ✓  |  Responses {stats[gw]['resp']}/{tested} ✓")
+    if stats[gw]['lat_conn_vals']:
+        passed_calls = stats[gw]['passed']
+        total_calls = tested * 3 * rounds
+        print(f"      Average latency ({passed_calls} passed / {total_calls} total API calls):")
+        print(f"        - connect (conn):            {avg_lat(stats[gw]['lat_conn_vals'])}")
+        print(f"        - time to first byte (ttfb): {avg_lat(stats[gw]['lat_ttfb_vals'])}")
+        print(f"        - total (tot):               {avg_lat(stats[gw]['lat_tot_vals'])}")
 print()
 PYEOF
 

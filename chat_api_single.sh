@@ -4,8 +4,8 @@
 # through the gateway.
 #
 # Prints progress to stderr; prints a single machine-parseable result line to stdout:
-#   PASS|<model>|<reply>
-#   FAIL|<model>|<error message>
+#   PASS|<model>|conn=<ms>;ttfb=<ms>;tot=<ms>|<reply>
+#   FAIL|<model>|conn=<ms>;ttfb=<ms>;tot=<ms>|<error message>
 #
 # Exits 0 on success, 1 on failure.
 #
@@ -30,13 +30,23 @@ log_info "Testing model (chat completions): ${MODEL} (timeout: ${TEST_TIMEOUT}s)
 # ── Call the chat completions API ───────────────────────────────────
 # Uses a timeout so a hanging model can't block the sweep.
 RESPONSE_FILE="$(mktemp)"
-HTTP_CODE="$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}" \
+CURL_WRITEOUT="$(mktemp)"
+HTTP_CODE="$(curl -s -o "${RESPONSE_FILE}" -w "%{http_code}\n%{time_connect}\n%{time_starttransfer}\n%{time_total}" \
     --max-time "${TEST_TIMEOUT}" \
     -X POST "${BASE_URL}/v1/chat/completions" \
     -H "Authorization: Bearer ${API_KEY}" \
     -H "Content-Type: application/json" \
     -d "{\"model\":\"${MODEL}\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with exactly: HELLO\"}],\"max_tokens\":500}")"
 CURL_EXIT=$?
+
+# Parse curl write-out: line1=http_code, line2=time_connect, line3=time_starttransfer, line4=time_total
+CURL_HTTP="$(printf '%s' "${HTTP_CODE}" | sed -n '1p')"
+CURL_CONN="$(printf '%s' "${HTTP_CODE}" | sed -n '2p')"
+CURL_TTFB="$(printf '%s' "${HTTP_CODE}" | sed -n '3p')"
+CURL_TOT="$(printf '%s' "${HTTP_CODE}" | sed -n '4p')"
+HTTP_CODE="${CURL_HTTP}"
+TIMING="$(build_timing_field "${CURL_CONN}" "${CURL_TTFB}" "${CURL_TOT}")"
+rm -f "${CURL_WRITEOUT}"
 
 RESPONSE="$(cat "${RESPONSE_FILE}")"
 rm -f "${RESPONSE_FILE}"
@@ -45,10 +55,10 @@ rm -f "${RESPONSE_FILE}"
 if [ "${CURL_EXIT}" -ne 0 ]; then
     if [ "${CURL_EXIT}" -eq 28 ]; then
         log_fail "${MODEL}: timed out after ${TEST_TIMEOUT}s"
-        echo "FAIL|${MODEL}|timed out after ${TEST_TIMEOUT}s"
+        echo "FAIL|${MODEL}|${TIMING}|timed out after ${TEST_TIMEOUT}s"
     else
         log_fail "${MODEL}: curl error (exit ${CURL_EXIT})"
-        echo "FAIL|${MODEL}|curl error (exit ${CURL_EXIT})"
+        echo "FAIL|${MODEL}|${TIMING}|curl error (exit ${CURL_EXIT})"
     fi
     exit 1
 fi
@@ -101,22 +111,22 @@ DETAIL="$(printf '%s' "${PARSED}" | cut -d'|' -f3-)"
 case "${STATUS}" in
     OK)
         log_pass "${MODEL}"
-        echo "PASS|${MODEL}|${DETAIL}"
+        echo "PASS|${MODEL}|${TIMING}|${DETAIL}"
         exit 0
         ;;
     PARSE_ERROR)
         log_fail "${MODEL}: invalid JSON response"
-        echo "FAIL|${MODEL}|invalid JSON: ${DETAIL}"
+        echo "FAIL|${MODEL}|${TIMING}|invalid JSON: ${DETAIL}"
         exit 1
         ;;
     API_ERROR)
         log_fail "${MODEL}: ${DETAIL}"
-        echo "FAIL|${MODEL}|${DETAIL}"
+        echo "FAIL|${MODEL}|${TIMING}|${DETAIL}"
         exit 1
         ;;
     FAIL)
         log_fail "${MODEL}: ${DETAIL}"
-        echo "FAIL|${MODEL}|${DETAIL}"
+        echo "FAIL|${MODEL}|${TIMING}|${DETAIL}"
         exit 1
         ;;
     *)
@@ -124,10 +134,10 @@ case "${STATUS}" in
         if [ "${HTTP_CODE}" != "200" ]; then
             ERR_SNIPPET="$(printf '%s' "${RESPONSE}" | head -c 200 | tr '\n' ' ')"
             log_fail "${MODEL}: HTTP ${HTTP_CODE}"
-            echo "FAIL|${MODEL}|HTTP ${HTTP_CODE}: ${ERR_SNIPPET}"
+            echo "FAIL|${MODEL}|${TIMING}|HTTP ${HTTP_CODE}: ${ERR_SNIPPET}"
         else
             log_fail "${MODEL}: unexpected response"
-            echo "FAIL|${MODEL}|unexpected response: ${PARSED}"
+            echo "FAIL|${MODEL}|${TIMING}|unexpected response: ${PARSED}"
         fi
         exit 1
         ;;

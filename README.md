@@ -84,6 +84,11 @@ There are three test suites, each with a single-model and an all-models script:
 - **Anthropic Messages** (`messages_api_single.sh`) — sends `POST /v1/messages` with `x-api-key` auth, a single user message, and `max_tokens: 500`. A PASS means the response contained non-empty text in `content[0].text`.
 - **OpenAI Responses** (`responses_api_single.sh`) — sends `POST /v1/responses` with `Authorization: Bearer`, using `input` (instead of `messages`) and `max_output_tokens` (instead of `max_tokens`). A PASS means the response had `status: "completed"` and contained non-empty text in `output[].content[].text` (where `type == "output_text"`).
 
+Each test also captures curl timing metrics (averaged over PASS rounds only):
+- **conn** (`time_connect`) — TCP connect time
+- **ttfb** (`time_starttransfer`) — time to first byte
+- **tot** (`time_total`) — end-to-end response time
+
 > **⚠️ Important:** These are **smoke tests**, not strict API compatibility tests. A PASS only indicates that the specific request we sent (a single prompt with minimal parameters) was handled successfully — it does **not** mean the model fully supports every feature of that API (streaming, function calling, multi-turn conversations, vision input, etc.). A model that passes may still fail on more complex or edge-case requests.
 
 All `*_all.sh` scripts share the same model filtering (drops TTS/image/video/embedding/vision), whitelist support, and summary table.
@@ -328,7 +333,7 @@ model-tests/
    - `chat_api_single.sh` — `POST /v1/chat/completions` (OpenAI format, `Authorization: Bearer` auth) with curl; checks `choices[0].message.content`.
    - `messages_api_single.sh` — `POST /v1/messages` (Anthropic format, `x-api-key` auth) with curl; checks `content[0].text`.
    - `responses_api_single.sh` — `POST /v1/responses` (OpenAI Responses format, `Authorization: Bearer` auth) with curl; uses `input` instead of `messages` and `max_output_tokens` instead of `max_tokens`; checks `output[0].content[0].text` (where `type == "output_text"`).
-4. Each single-model script prints a machine-parseable `PASS|<model>|<reply>` or `FAIL|<model>|<error>` line to stdout (the model's reply after the final `|`) and live `[PASS]`/`[FAIL]` logs to stderr.
+4. Each single-model script captures curl timing (`time_connect`, `time_starttransfer`, `time_total`) and prints a machine-parseable `PASS|<model>|conn=<ms>;ttfb=<ms>;tot=<ms>|<reply>` or `FAIL|<model>|conn=<ms>;ttfb=<ms>;tot=<ms>|<error>` line to stdout. The aggregating scripts average latency over PASS rounds only, displayed as `conn/ttfb/tot` (conn in ms, ttfb/tot in seconds).
 5. The shared `print_summary_table` helper renders the final results table with the `n/m` count.
 6. `run_all_api_tests.sh` runs `chat_api_single.sh`, `messages_api_single.sh`, and `responses_api_single.sh` for each model across N rounds and reports a combined table.
 
