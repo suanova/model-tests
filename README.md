@@ -128,21 +128,29 @@ A model counts as **supporting** an API if it passes **at least once** across al
 ```
 $ bash run_all_api_tests.sh 2
 ...
-#    Model                              Chat Completions     Messages API          Responses API
------------------------------------------------------------------------------------------------
-1    glm-5.1                            2/2  ✓               2/2  ✓               2/2  ✓
-2    some-flaky-model                  1/2  ✓               0/2  ✗               0/2  ✗
------------------------------------------------------------------------------------------------
+#    Model                                  Chat Complet.      Messages API       Responses API      Latency(conn/ttfb/tot)
+-----------------------------------------------------------------------------------------------------------------------
+1    glm-5.1                                2/2  ✓             2/2  ✓             2/2  ✓              84ms/510ms/720ms
+2    some-flaky-model                       1/2  ✓             0/2  ✗             0/2  ✗              92ms/640ms/980ms
+3    kimi-k2.6                              2/2  ✓             2/2  ✓             1/2  ✓             110ms/380ms/690ms
+-----------------------------------------------------------------------------------------------------------------------
 
-  Summary (2 round(s) per API):
-  Chat Completions API:   2/2 models support it (passed >= 1 round)
-  Anthropic Messages API: 1/2 models support it (passed >= 1 round)
-  Responses API:          1/2 models support it (passed >= 1 round)
-  All three APIs:         1/2 models
+  Summary (2 round(s) per API): 8 fetched, 3 ignored, 3 tested
+  - 3/3 support Chat Completions
+  - 2/3 support Messages API
+  - 2/3 support Responses API
+  All three APIs: 2/3 models
+
+  Average latency (12 passed / 18 total API calls):
+  - connect (conn):              95ms
+  - time to first byte (ttfb): 510ms
+  - total (tot):               797ms
 ```
 
+Each row shows pass counts per API (`pass/rounds` + ✓/✗) and the per-model average latency (`conn/ttfb/tot`, averaged over PASS rounds only). The **Summary** counts how many models *support* each API (passed ≥ 1 round), and the **Average latency** line reports the mean latency across all passing API calls, with the numerator (calls that passed) over the denominator (total API calls = models × 3 APIs × rounds).
+
 - **Arguments:** number of rounds (default `1`). Each round runs all three APIs for each model.
-- **Per-round progress** streams to stderr (`API [Chat Completions] - round 1/2  PASS`); the final combined table goes to stdout.
+- **Per-round progress** streams to stderr (`API [Chat Completions] - round 1/2  PASS  conn=84ms, ttfb=510ms, tot=720ms`); the final combined table goes to stdout.
 - Respects `whitelist.txt` and `TEST_TIMEOUT` like the other scripts.
 
 ## Docker image
@@ -267,13 +275,45 @@ docker run --rm \
 
 ### Output
 
-The comparison prints three tables:
+The comparison prints a single side-by-side table — gateway A on the left, gateway B on the right — with one row per model. Shared models appear once with both columns filled; A-only models have the B side blank (`—`), and B-only models have the A side blank. Each side shows pass counts for Chat/Messages/Responses plus the per-model average latency (`conn/ttfb/tot`).
 
-1. **Shared models** — each model row shows Chat A/B, Messages A/B, Responses A/B side by side, so you can see whether a model works on both gateways or just one.
-2. **A-only models** — standard 3-API table tested against gateway A.
-3. **B-only models** — standard 3-API table tested against gateway B.
+```
+$ bash compare_gateways.sh
+...
+════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+  Gateway Comparison Results (1 round(s) per API)
+  cuberouter: https://cuberouter.cn  |  modelverse: https://api.modelverse.cn
+  Started: 2025-07-22 14:30:00  |  Elapsed: 47s
+════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-Followed by a grand-total summary line.
+  cuberouter: 8 fetched, 2 non-text dropped, 0 not in whitelist, 6 kept
+  modelverse: 9 fetched, 3 non-text dropped, 0 not in whitelist, 6 kept
+  Shared: 2  |  cuberouter-only: 1  |  modelverse-only: 0
+
+                                               ───────────── cuberouter ─────────────                ───────────── modelverse ─────────────
+#     Model                                 Chat     Msg    Resp  Latency(conn/ttfb/tot)            Chat     Msg    Resp  Latency(conn/ttfb/tot)
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+1     gpt-4o                                 1/1     1/1     1/1        84ms/510ms/720ms             1/1     0/1     1/1        70ms/420ms/590ms
+2     kimi-k2.6                              1/1     1/1     1/1       110ms/380ms/690ms             1/1     1/1     0/1        95ms/360ms/650ms
+3     glm-5.1                                1/1     1/1     1/1        80ms/440ms/700ms              —       —       —                    —/—/—
+────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+
+  Summary:
+    cuberouter:
+      Chat 3/3 ✓  |  Messages 3/3 ✓  |  Responses 3/3 ✓
+      Average latency (9 passed / 9 total API calls):
+        - connect (conn):              91ms
+        - time to first byte (ttfb): 443ms
+        - total (tot):               703ms
+    modelverse:
+      Chat 2/2 ✓  |  Messages 1/2 ✓  |  Responses 1/2 ✓
+      Average latency (4 passed / 6 total API calls):
+        - connect (conn):              83ms
+        - time to first byte (ttfb): 390ms
+        - total (tot):               620ms
+```
+
+The header shows how many models each gateway fetched, how many were dropped as non-text or not in the whitelist, and how many were kept, plus the shared / A-only / B-only split. The **Summary** gives a per-gateway pass count per API and an average latency over passing API calls (`passed` / `total API calls`, where total = tested models × 3 APIs × rounds).
 
 ### Config
 
