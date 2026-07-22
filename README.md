@@ -183,6 +183,27 @@ docker run --rm \
     all 3
 ```
 
+**Using a `.env` file instead of `-e` flags** — for commands that need multiple env vars (e.g. `compare`), mounting a `.env` file is more convenient:
+
+```bash
+# 1. Create .env with all your keys:
+cp .env.example .env
+# Edit .env to set API_KEY, BASE_URL, API_KEY_B, BASE_URL_B, etc.
+
+# 2. Mount it into the container — the scripts will auto-load it:
+docker run --rm \
+    -v "$PWD/.env:/app/.env:ro" \
+    harbor.isuanova.com/suanova/model-tests \
+    compare 3
+
+# Or combine .env with explicit env vars (env vars take precedence over .env):
+docker run --rm \
+    -v "$PWD/.env:/app/.env:ro" \
+    -e API_KEY \
+    harbor.isuanova.com/suanova/model-tests \
+    all
+```
+
 ## Config
 
 | Variable | Default | Description |
@@ -222,7 +243,12 @@ API_KEY_B=sk-... BASE_URL_B=https://... bash compare_gateways.sh
 # Via CLI flags (override env/.env):
 bash compare_gateways.sh --b-key sk-... --b-url https://... 3
 
-# Via Docker:
+# Via Docker with .env file (most convenient for compare — all keys in one file):
+docker run --rm \
+    -v "$PWD/.env:/app/.env:ro" \
+    harbor.isuanova.com/suanova/model-tests compare
+
+# Via Docker with explicit env vars:
 docker run --rm \
     -e API_KEY -e API_KEY_B -e BASE_URL_B \
     harbor.isuanova.com/suanova/model-tests compare

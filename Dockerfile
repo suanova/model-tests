@@ -10,7 +10,7 @@
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/suanova/model-tests
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/suanova/model-tests all 3
 #   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/suanova/model-tests chat
-#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/suanova/model-tests responses-single glm-5.1
+#   docker run --rm -v .env:/app/.env:ro harbor.isuanova.com/suanova/model-tests compare
 
 FROM python:3.11-slim
 

@@ -55,14 +55,16 @@ Environment:
   BASE_URL_B     Required for "compare". Base URL for gateway B.
   TEST_TIMEOUT   Optional. Per-model timeout in seconds (defaults to 30).
 
+  Instead of passing multiple -e flags, you can mount a .env file:
+    docker run --rm -v "$PWD/.env:/app/.env:ro" <image> compare
+
 Examples:
   docker run --rm -e API_KEY=sk-... <image>
   docker run --rm -e API_KEY=sk-... <image> all 3
   docker run --rm -e API_KEY=sk-... <image> chat
   docker run --rm -e API_KEY=sk-... <image> messages
   docker run --rm -e API_KEY=sk-... <image> responses
-  docker run --rm -e API_KEY=sk-... -e API_KEY_B=sk-... -e BASE_URL_B=https://... <image> compare
-  docker run --rm -e API_KEY=sk-... -e API_KEY_B=sk-... -e BASE_URL_B=https://... <image> compare 3 --b-key sk-alt --b-url https://alt.example.com
+  docker run --rm -v .env:/app/.env:ro <image> compare
   docker run --rm -e API_KEY=sk-... <image> responses-single glm-5.1
 EOF
 }
