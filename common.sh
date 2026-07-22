@@ -2,7 +2,6 @@
 # common.sh — Shared helpers for API model test scripts
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE_NAME="harbor.isuanova.com/yangle/claude-code"
 
 # ── Colors ──────────────────────────────────────────────────────────
 RED='\033[0;31m'
@@ -13,8 +12,7 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # ── Logging ─────────────────────────────────────────────────────────
-# All log functions write to stderr so stdout stays clean for machine-parseable
-# output (e.g. the PASS|model| line from claude_code_single.sh).
+# All log functions write to stderr so stdout stays clean for machine-parseable output.
 log_info()  { echo -e "${CYAN}[INFO]${NC}  $1" >&2; }
 log_pass()  { echo -e "${GREEN}[PASS]${NC}  $1" >&2; }
 log_fail()  { echo -e "${RED}[FAIL]${NC}  $1" >&2; }
@@ -92,119 +90,6 @@ require_api_key() {
             log_info "Whitelist: ${SCRIPT_DIR}/whitelist.txt (active)"
         fi
     fi
-}
-
-# ── Build the Docker image ──────────────────────────────────────────
-build_image() {
-    log_step "Building Docker image: ${IMAGE_NAME}"
-    docker build -t "${IMAGE_NAME}" -f "${SCRIPT_DIR}/Dockerfile.claude-code" "${SCRIPT_DIR}"
-    if [ $? -ne 0 ]; then
-        log_fail "Docker build failed"
-        exit 1
-    fi
-    log_info "Image built successfully"
-}
-
-# ── Run claude-code in a container and capture output ────────────────
-# Usage: run_claude <extra_docker_args> -- <claude_args>
-# The container will run claude with the given prompt and return stdout.
-# The API key is always injected via ANTHROPIC_AUTH_TOKEN.
-run_claude() {
-    local docker_args=()
-    local claude_args=()
-    local found_separator=false
-
-    # Split args into docker_args and claude_args at "--"
-    for arg in "$@"; do
-        if [ "$arg" = "--" ]; then
-            found_separator=true
-            continue
-        fi
-        if [ "$found_separator" = false ]; then
-            docker_args+=("$arg")
-        else
-            claude_args+=("$arg")
-        fi
-    done
-
-    docker run --rm \
-        -e ANTHROPIC_AUTH_TOKEN="${API_KEY}" \
-        "${docker_args[@]}" \
-        "${IMAGE_NAME}" \
-        claude "${claude_args[@]}"
-}
-
-# ── Run claude-code with settings.json ──────────────────────────────
-# Usage: run_claude_with_settings <settings_json_path> <prompt>
-# Mounts the given settings.json into ~/.claude/settings.json and runs claude.
-run_claude_with_settings() {
-    local settings_path="$1"
-    local prompt="$2"
-
-    docker run --rm \
-        -e ANTHROPIC_AUTH_TOKEN="${API_KEY}" \
-        -v "${settings_path}:/root/.claude/settings.json:ro" \
-        "${IMAGE_NAME}" \
-        claude -p "${prompt}" --output-format text
-}
-
-# ── Run claude-code with env vars only ──────────────────────────────
-# Usage: run_claude_with_env <prompt>
-# Passes all guide env vars as Docker env vars (no settings.json).
-run_claude_with_env() {
-    local prompt="$1"
-
-    docker run --rm \
-        -e ANTHROPIC_AUTH_TOKEN="${API_KEY}" \
-        -e ANTHROPIC_BASE_URL="${BASE_URL}" \
-        -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
-        -e CLAUDE_CODE_ATTRIBUTION_HEADER=0 \
-        "${IMAGE_NAME}" \
-        claude -p "${prompt}" --output-format text
-}
-
-# ── Assert that output contains non-empty content ───────────────────
-# Usage: assert_response <output_file>
-# Checks that the output is not empty and doesn't contain obvious error markers.
-assert_response() {
-    local output_file="$1"
-    local output
-    output="$(cat "${output_file}")"
-
-    # Check non-empty
-    if [ -z "${output}" ]; then
-        log_fail "Response is empty"
-        return 1
-    fi
-
-    # Check for error indicators
-    if echo "${output}" | grep -qiE '(error|failed|unauthorized|401|403|404|500|invalid)'; then
-        log_fail "Response contains error indicators: ${output}"
-        return 1
-    fi
-
-    log_pass "Response received and valid"
-    return 0
-}
-
-# ── Generate a settings.json file ──────────────────────────────────
-# Usage: generate_settings_json <output_path> [base_url_override]
-# The API key is read from $API_KEY and written into the file.
-generate_settings_json() {
-    local output_path="$1"
-    local base_url="${2:-${BASE_URL}}"
-
-    cat > "${output_path}" <<EOF
-{
-  "env": {
-    "ANTHROPIC_BASE_URL": "${base_url}",
-    "ANTHROPIC_AUTH_TOKEN": "${API_KEY}",
-    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-    "CLAUDE_CODE_ATTRIBUTION_HEADER": "0"
-  }
-}
-EOF
-    log_info "Generated settings.json at ${output_path}"
 }
 
 # ── List chat models from the gateway ───────────────────────────────

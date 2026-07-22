@@ -2,8 +2,7 @@
 # messages_api_all.sh
 # Iterates over all suitable (text/chat) models and runs
 # messages_api_single.sh for each, testing the Anthropic Messages API
-# (/v1/messages) directly with curl (no Docker / Claude Code). Outputs a
-# results table + summary.
+# (/v1/messages) directly with curl. Outputs a results table + summary.
 #
 # Excludes non-chat models: TTS, image generation, video, embedding.
 # Respects whitelist.txt if present.

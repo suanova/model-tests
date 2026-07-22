@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # messages_api_single.sh [model_name]
 # Tests ONE model via the Anthropic Messages API (/v1/messages) through the gateway.
-# This is the same API that Claude Code uses, but tested directly with curl (no Docker)
-# to isolate the gateway/API layer from the Claude Code client.
 #
 # Prints progress to stderr; prints a single machine-parseable result line to stdout:
 #   PASS|<model>|<reply>

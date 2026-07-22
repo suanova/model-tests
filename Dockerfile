@@ -5,12 +5,12 @@
 # The API key is passed at runtime via -e API_KEY=... (or baked into .env).
 #
 # Build:
-#   docker build -t harbor.isuanova.com/yangle/model-tests .
+#   docker build -t harbor.isuanova.com/suanova/model-tests .
 # Run:
-#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests
-#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests all 3
-#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests chat
-#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/yangle/model-tests responses-single glm-5.1
+#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/suanova/model-tests
+#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/suanova/model-tests all 3
+#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/suanova/model-tests chat
+#   docker run --rm -e API_KEY=sk-... harbor.isuanova.com/suanova/model-tests responses-single glm-5.1
 
 FROM python:3.11-slim
 
