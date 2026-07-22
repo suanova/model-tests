@@ -11,35 +11,36 @@ Test scripts that verify models work across a gateway's API endpoints — the Op
 
 There are two ways to run the tests: via the prebuilt Docker image or locally.
 
-Either way, first export your API key in your shell — every command below picks it up automatically, so you can copy-paste them verbatim:
+Either way, first set up your API key in a `.env` file — every command below picks it up automatically, so you can copy-paste them verbatim:
 
 ```bash
-export API_KEY=sk-xxx
+cp .env.example .env
+# Edit .env and set API_KEY=your_key (and optionally BASE_URL, API_KEY_B, BASE_URL_B)
 ```
 
 ### Option A: Docker image
 
-The runner image is published to the registry as `harbor.isuanova.com/suanova/model-tests` and bundles the chat completions + Anthropic Messages + OpenAI Responses API test scripts, so you can run the full suite without installing anything on the host. The first `docker run` pulls it automatically (or `docker pull` it ahead of time):
+The runner image is published to the registry as `harbor.isuanova.com/suanova/model-tests` and bundles the chat completions + Anthropic Messages + OpenAI Responses API test scripts, so you can run the full suite without installing anything on the host. The first `docker run` pulls it automatically (or `docker pull` it ahead of time). Mount your `.env` file into the container — the scripts will auto-load it:
 
 ```bash
 # Pull the published image (optional — the first docker run pulls it automatically)
 docker pull harbor.isuanova.com/suanova/model-tests
 
 # Run all API tests (chat + messages + responses, default 1 round)
-docker run --rm -e API_KEY harbor.isuanova.com/suanova/model-tests
+docker run --rm -v "$PWD/.env:/app/.env:ro" harbor.isuanova.com/suanova/model-tests
 
 # 3 rounds
-docker run --rm -e API_KEY harbor.isuanova.com/suanova/model-tests all 3
+docker run --rm -v "$PWD/.env:/app/.env:ro" harbor.isuanova.com/suanova/model-tests all 3
 
 # Just one API, all models
-docker run --rm -e API_KEY harbor.isuanova.com/suanova/model-tests chat
-docker run --rm -e API_KEY harbor.isuanova.com/suanova/model-tests messages
-docker run --rm -e API_KEY harbor.isuanova.com/suanova/model-tests responses
+docker run --rm -v "$PWD/.env:/app/.env:ro" harbor.isuanova.com/suanova/model-tests chat
+docker run --rm -v "$PWD/.env:/app/.env:ro" harbor.isuanova.com/suanova/model-tests messages
+docker run --rm -v "$PWD/.env:/app/.env:ro" harbor.isuanova.com/suanova/model-tests responses
 
 # Single model
-docker run --rm -e API_KEY harbor.isuanova.com/suanova/model-tests chat-single glm-5.1
-docker run --rm -e API_KEY harbor.isuanova.com/suanova/model-tests messages-single glm-5.1
-docker run --rm -e API_KEY harbor.isuanova.com/suanova/model-tests responses-single glm-5.1
+docker run --rm -v "$PWD/.env:/app/.env:ro" harbor.isuanova.com/suanova/model-tests chat-single glm-5.1
+docker run --rm -v "$PWD/.env:/app/.env:ro" harbor.isuanova.com/suanova/model-tests messages-single glm-5.1
+docker run --rm -v "$PWD/.env:/app/.env:ro" harbor.isuanova.com/suanova/model-tests responses-single glm-5.1
 
 # Show help
 docker run --rm harbor.isuanova.com/suanova/model-tests help
@@ -49,7 +50,7 @@ See the **Docker image** section below for the full subcommand reference.
 
 ### Option B: Local
 
-The local scripts read `API_KEY` from the environment (or from a `.env` file — see below), so the `export API_KEY=sk-xxx` above is all you need.
+The local scripts read config from a `.env` file (or from environment variables — see below). With the `.env` file set up above, just run:
 
 ```bash
 # Chat completions, all models:
@@ -63,11 +64,11 @@ bash run_all_api_tests.sh          # default 1 round
 bash run_all_api_tests.sh 3        # 3 rounds
 ```
 
-The local scripts (Option B) resolve the API key in this order:
-1. `API_KEY` environment variable (e.g. from `export API_KEY=sk-xxx` above)
+The scripts resolve config in this order (first wins):
+1. `API_KEY` environment variable (e.g. from `export API_KEY=sk-xxx`)
 2. `API_KEY` in `.env` (in the script directory)
 
-So the exported env var always takes precedence over the `.env` file. To use a `.env` file instead, `cp .env.example .env` and set `API_KEY=` in it — then you can skip the `export`.
+The `.env` file is the recommended way — set it up once with `cp .env.example .env` and every run picks it up automatically. You can still override it with an explicit env var when convenient (e.g. `API_KEY=sk-xxx bash run_all_api_tests.sh` for a one-off run).
 
 ## Test Cases
 
