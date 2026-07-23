@@ -6,10 +6,16 @@
 # API_KEY_B + BASE_URL_B config.
 #
 # For each gateway, fetches /v1/models, filters for chat models, and
-# computes three groups:
-#   - Shared: models on both gateways  → tested on BOTH gateways
-#   - A-only: models only on gateway A → tested on gateway A
-#   - B-only: models only on gateway B → tested on gateway B
+# matches models between gateways using two rules (priority order):
+#   1. Exact match — identical model IDs on both gateways.
+#   2. Prefix-stripped match — strip any org/ prefix so that
+#      glm-5.1 matches zai-org/glm-5.1 (applied only when no exact
+#      match exists). Fuzzy-matched pairs display the short name.
+#
+# After matching, models fall into three groups:
+#   - Shared: matched on both gateways  → tested on BOTH gateways
+#   - A-only: unmatched on gateway A   → tested on gateway A
+#   - B-only: unmatched on gateway B   → tested on gateway B
 #
 # Each model is tested across all three APIs (Chat Completions,
 # Anthropic Messages, OpenAI Responses). Supports multiple rounds;
@@ -146,14 +152,48 @@ with open(a_file) as f:
 with open(b_file) as f:
     b_models = sorted(set(l.strip() for l in f if l.strip()))
 
-shared = sorted(set(a_models) & set(b_models))
-a_only = sorted(set(a_models) - set(b_models))
-b_only = sorted(set(b_models) - set(a_models))
+def short_name(model):
+    """Strip org/ prefix: 'zai-org/glm-5.1' → 'glm-5.1'."""
+    if '/' in model:
+        return model.rsplit('/', 1)[1]
+    return model
+
+# Step 1: exact matches (rule 1)
+exact_shared = sorted(set(a_models) & set(b_models))
+a_remaining = set(a_models) - set(exact_shared)
+b_remaining = set(b_models) - set(exact_shared)
+
+# Step 2: prefix-stripped fuzzy matches on remaining models (rule 2)
+a_by_short = {}
+for m in a_remaining:
+    a_by_short.setdefault(short_name(m), []).append(m)
+b_by_short = {}
+for m in b_remaining:
+    b_by_short.setdefault(short_name(m), []).append(m)
+
+fuzzy_shared = []
+a_matched = set()
+b_matched = set()
+for sn in sorted(set(a_by_short.keys()) & set(b_by_short.keys())):
+    a_match = sorted(a_by_short[sn])[0]
+    b_match = sorted(b_by_short[sn])[0]
+    fuzzy_shared.append((sn, a_match, b_match))
+    a_matched.add(a_match)
+    b_matched.add(b_match)
+
+a_only = sorted(a_remaining - a_matched)
+b_only = sorted(b_remaining - b_matched)
+
+total_shared = len(exact_shared) + len(fuzzy_shared)
 
 with open(out_file, 'w') as out:
-    out.write(f"SHARED:{len(shared)}\n")
-    for m in shared:
-        out.write(f"S:{m}\n")
+    out.write(f"SHARED:{total_shared}\n")
+    # Exact matches: display == a_name == b_name
+    for m in exact_shared:
+        out.write(f"S:{m}|{m}|{m}\n")
+    # Fuzzy matches: display is the short name (no org/ prefix)
+    for display, a_name, b_name in fuzzy_shared:
+        out.write(f"S:{display}|{a_name}|{b_name}\n")
     out.write(f"A_ONLY:{len(a_only)}\n")
     for m in a_only:
         out.write(f"A:{m}\n")
@@ -166,7 +206,9 @@ SHARED_COUNT="$(grep '^SHARED:' "${SET_FILE}" | cut -d: -f2)"
 A_ONLY_COUNT="$(grep '^A_ONLY:' "${SET_FILE}" | cut -d: -f2)"
 B_ONLY_COUNT="$(grep '^B_ONLY:' "${SET_FILE}" | cut -d: -f2)"
 
-SHARED_MODELS="$(grep '^S:' "${SET_FILE}" | cut -d: -f2)"
+SHARED_MODELS="$(grep '^S:' "${SET_FILE}" | cut -d: -f2- | cut -d'|' -f1)"
+SHARED_A_NAMES="$(grep '^S:' "${SET_FILE}" | cut -d: -f2- | cut -d'|' -f2)"
+SHARED_B_NAMES="$(grep '^S:' "${SET_FILE}" | cut -d: -f2- | cut -d'|' -f3)"
 A_ONLY_MODELS="$(grep '^A:' "${SET_FILE}" | cut -d: -f2)"
 B_ONLY_MODELS="$(grep '^B:' "${SET_FILE}" | cut -d: -f2)"
 
@@ -260,22 +302,36 @@ test_model_on_gateway() {
 }
 
 # ── Parallel variant ────────────────────────────────────────────────
+# For shared models, model_a / model_b may differ from the display name
+# (fuzzy match).  We test with the real model IDs but rewrite the model
+# field in result lines to the display name so the table groups correctly.
 test_model_parallel() {
-    local model="$1"
+    local display_name="$1"
+    local model_a="$2"
+    local model_b="$3"
     local log_b="$(mktemp)"
     local result_a="$(mktemp)"
     local result_b="$(mktemp)"
 
-    ( test_model_on_gateway "${model}" "${GW_B_LABEL}" "${BASE_URL_B}" "${API_KEY_B}" ) 2>"${log_b}" >"${result_b}" &
+    ( test_model_on_gateway "${model_b}" "${GW_B_LABEL}" "${BASE_URL_B}" "${API_KEY_B}" ) 2>"${log_b}" >"${result_b}" &
     local pid_b=$!
 
-    test_model_on_gateway "${model}" "${GW_A_LABEL}" "${BASE_URL}" "${API_KEY}" >"${result_a}"
+    test_model_on_gateway "${model_a}" "${GW_A_LABEL}" "${BASE_URL}" "${API_KEY}" >"${result_a}"
 
     wait "${pid_b}" 2>/dev/null
     cat "${log_b}" >&2
 
-    cat "${result_a}" >> "${RESULTS_FILE}"
-    cat "${result_b}" >> "${RESULTS_FILE}"
+    # Rewrite the model field to the display name in each result line:
+    #   <gw_label>|<model_id>|... → <gw_label>|<display_name>|...
+    # We only rewrite the line for its own gateway (A line → model_a, B line → model_b).
+    awk -v d="${display_name}" -v ma="${model_a}" -v mb="${model_b}" \
+        -v gwa="${GW_A_LABEL}" -v gwb="${GW_B_LABEL}" -F'|' \
+        '{ if ($1==gwa && $2==ma) $2=d; else if ($1==gwb && $2==mb) $2=d; print }' \
+        OFS='|' "${result_a}" >> "${RESULTS_FILE}"
+    awk -v d="${display_name}" -v ma="${model_a}" -v mb="${model_b}" \
+        -v gwa="${GW_A_LABEL}" -v gwb="${GW_B_LABEL}" -F'|' \
+        '{ if ($1==gwa && $2==ma) $2=d; else if ($1==gwb && $2==mb) $2=d; print }' \
+        OFS='|' "${result_b}" >> "${RESULTS_FILE}"
 
     rm -f "${log_b}" "${result_a}" "${result_b}"
 }
@@ -284,10 +340,16 @@ MODEL_IDX=0
 TOTAL_MODEL_COUNT=$((SHARED_COUNT + A_ONLY_COUNT + B_ONLY_COUNT))
 
 # ── Shared models (tested on both gateways in parallel) ───────────────
-for model in ${SHARED_MODELS}; do
+# SHARED_MODELS, SHARED_A_NAMES, SHARED_B_NAMES are parallel lists:
+# each entry at the same index is (display_name, model_on_A, model_on_B).
+# Convert them into indexed arrays for parallel iteration.
+mapfile -t SM_ARR <<< "${SHARED_MODELS}"
+mapfile -t SA_ARR <<< "${SHARED_A_NAMES}"
+mapfile -t SB_ARR <<< "${SHARED_B_NAMES}"
+for i in "${!SM_ARR[@]}"; do
     MODEL_IDX=$((MODEL_IDX + 1))
-    echo -e "${BOLD}[${MODEL_IDX}/${TOTAL_MODEL_COUNT}] ${model}${NC}" >&2
-    test_model_parallel "${model}"
+    echo -e "${BOLD}[${MODEL_IDX}/${TOTAL_MODEL_COUNT}] ${SM_ARR[$i]}${NC}" >&2
+    test_model_parallel "${SM_ARR[$i]}" "${SA_ARR[$i]}" "${SB_ARR[$i]}"
     echo "" >&2
 done
 

@@ -232,13 +232,18 @@ docker run --rm \
 
 `compare_gateways.sh` compares the model offerings of **two** API gateways and tests their overlap. It uses the existing `API_KEY` + `BASE_URL` as **gateway A**, and adds `API_KEY_B` + `BASE_URL_B` for **gateway B**.
 
-For each gateway it fetches `/v1/models`, filters for chat models, and computes three groups:
+For each gateway it fetches `/v1/models`, filters for chat models, and matches models between the two gateways using two rules (in priority order):
+
+1. **Exact match** — identical model IDs on both gateways (e.g. `glm-5.1` on A and B).
+2. **Prefix-stripped match** — strip any `org/`-style prefix, so `glm-5.1` on A matches `zai-org/glm-5.1` on B. Only applied when no exact match exists. For a fuzzy-matched pair, the table shows the short name (no prefix).
+
+Models are then classified into three groups:
 
 | Group | Tested on | APIs tested |
 |-------|-----------|-------------|
-| **Shared** (models on both gateways) | Both A and B | Chat + Messages + Responses (6 tests per model) |
-| **A-only** (models only on A) | Gateway A only | Chat + Messages + Responses (3 tests per model) |
-| **B-only** (models only on B) | Gateway B only | Chat + Messages + Responses (3 tests per model) |
+| **Shared** (matched on both gateways) | Both A and B | Chat + Messages + Responses (6 tests per model) |
+| **A-only** (unmatched on A) | Gateway A only | Chat + Messages + Responses (3 tests per model) |
+| **B-only** (unmatched on B) | Gateway B only | Chat + Messages + Responses (3 tests per model) |
 
 A model counts as **supporting** an API on a gateway if it passes at least once across all rounds — same rule as `run_all_api_tests.sh`.
 
